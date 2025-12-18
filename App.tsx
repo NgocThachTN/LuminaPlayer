@@ -1,15 +1,17 @@
 import React, { useState, useRef, useEffect } from "react";
-import { SongState } from "./types";
-import { getPlainLyrics } from "./services/geminiService";
+import { SongState, LyricsResult } from "./types";
+import { getLyrics } from "./services/geminiService";
 import { extractMetadata } from "./services/metadataService";
 import { Visualizer } from "./components/Visualizer";
+
+const emptyLyrics: LyricsResult = { synced: [], plain: [], isSynced: false };
 
 const App: React.FC = () => {
   const [state, setState] = useState<SongState>({
     file: null,
     url: "",
     metadata: { title: "READY TO PLAY", artist: "SELECT A TRACK" },
-    lyrics: [],
+    lyrics: emptyLyrics,
     isPlaying: false,
     currentTime: 0,
     duration: 0,
@@ -21,6 +23,9 @@ const App: React.FC = () => {
   const [showPlaylist, setShowPlaylist] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
+  const [activeLyricIndex, setActiveLyricIndex] = useState(-1);
+  const lastScrollTimeRef = useRef(0);
+  const scrollTimeoutRef = useRef<number | null>(null);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -55,6 +60,7 @@ const App: React.FC = () => {
 
   const playSong = async (file: File, index: number) => {
     setIsLoading(true);
+    setActiveLyricIndex(-1);
 
     // Scroll lyrics về đầu trang
     if (lyricsContainerRef.current) {
@@ -72,14 +78,14 @@ const App: React.FC = () => {
       file,
       url,
       metadata,
-      lyrics: [], // Clear old lyrics
+      lyrics: emptyLyrics,
       isPlaying: true,
       currentTime: 0,
       currentSongIndex: index,
     }));
 
     // Load lyrics in background
-    const lyrics = await getPlainLyrics(metadata.title, metadata.artist);
+    const lyrics = await getLyrics(metadata.title, metadata.artist);
 
     // Update lyrics when ready (only if still same song)
     setState((prev) => {
@@ -126,13 +132,70 @@ const App: React.FC = () => {
     if (lyricsContainerRef.current) {
       lyricsContainerRef.current.scrollTop = 0;
     }
+    setActiveLyricIndex(-1);
+    lastScrollTimeRef.current = 0;
   }, [state.currentSongIndex]);
+
+  // Cleanup animation frame on unmount
+  useEffect(() => {
+    return () => {
+      if (scrollTimeoutRef.current) {
+        cancelAnimationFrame(scrollTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (state.isPlaying && audioRef.current) {
       audioRef.current.play().catch((e) => console.error("Playback failed", e));
     }
   }, [state.url, state.isPlaying]);
+
+  // Optimized lyric tracking with debounced scroll (only for synced lyrics)
+  useEffect(() => {
+    if (!state.lyrics.isSynced || state.lyrics.synced.length === 0) return;
+
+    // Add small offset (200ms ahead) so lyrics feel more in sync
+    const currentTime = state.currentTime + 0.2;
+    const index = state.lyrics.synced.findLastIndex(
+      (l) => l.time <= currentTime
+    );
+
+    if (index !== activeLyricIndex && index >= 0) {
+      setActiveLyricIndex(index);
+
+      // Debounce scroll to avoid excessive calls
+      const now = Date.now();
+      if (now - lastScrollTimeRef.current > 100) {
+        lastScrollTimeRef.current = now;
+
+        if (scrollTimeoutRef.current) {
+          cancelAnimationFrame(scrollTimeoutRef.current);
+        }
+
+        scrollTimeoutRef.current = requestAnimationFrame(() => {
+          if (lyricsContainerRef.current) {
+            const activeElement = lyricsContainerRef.current.children[
+              index
+            ] as HTMLElement;
+            if (activeElement) {
+              const container = lyricsContainerRef.current;
+              const containerHeight = container.clientHeight;
+              const elementTop = activeElement.offsetTop;
+              const elementHeight = activeElement.clientHeight;
+              const targetScroll =
+                elementTop - containerHeight / 2 + elementHeight / 2;
+
+              container.scrollTo({
+                top: targetScroll,
+                behavior: "smooth",
+              });
+            }
+          }
+        });
+      }
+    }
+  }, [state.currentTime, state.lyrics, activeLyricIndex]);
 
   const togglePlay = () => {
     if (!audioRef.current) return;
@@ -145,6 +208,9 @@ const App: React.FC = () => {
     const secs = Math.floor(time % 60);
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
+
+  const hasLyrics =
+    state.lyrics.synced.length > 0 || state.lyrics.plain.length > 0;
 
   return (
     <div className="h-screen w-full flex flex-col bg-black text-white overflow-hidden">
@@ -283,36 +349,70 @@ const App: React.FC = () => {
                 Loading Lyrics
               </p>
             </div>
-          ) : (
+          ) : state.lyrics.isSynced ? (
+            // Synced Lyrics View
+            <div
+              ref={lyricsContainerRef}
+              className="h-full w-full overflow-y-auto lyrics-scroll py-[30vh] px-8 md:px-16"
+            >
+              {state.lyrics.synced.map((line, idx) => {
+                const distance = Math.abs(idx - activeLyricIndex);
+                const isNear = distance > 0 && distance <= 2;
+
+                return (
+                  <div
+                    key={idx}
+                    onClick={() =>
+                      audioRef.current &&
+                      (audioRef.current.currentTime = line.time)
+                    }
+                    className={`lyric-item text-xl md:text-2xl font-normal tracking-wide cursor-pointer ${
+                      idx === activeLyricIndex ? "active-lyric" : ""
+                    } ${isNear ? "near-active" : ""}`}
+                  >
+                    {line.text.toUpperCase()}
+                  </div>
+                );
+              })}
+            </div>
+          ) : hasLyrics ? (
+            // Plain Lyrics View
             <div
               ref={lyricsContainerRef}
               className="h-full w-full overflow-y-auto lyrics-scroll py-8 px-8 md:px-16"
             >
-              {state.lyrics.length > 0 ? (
-                <div className="flex flex-col gap-3">
-                  {state.lyrics.map((line, idx) => (
-                    <div
-                      key={idx}
-                      className="text-lg md:text-xl font-normal tracking-wide text-white/80 leading-relaxed"
-                    >
-                      {line}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="h-full flex items-center justify-center text-white/10 text-xs uppercase tracking-[0.5em]">
-                  {state.file
-                    ? "No Lyrics Found"
-                    : "System Idle - Waiting for Input"}
-                </div>
-              )}
+              <div className="flex flex-col gap-3">
+                {state.lyrics.plain.map((line, idx) => (
+                  <div
+                    key={idx}
+                    className="text-lg md:text-xl font-normal tracking-wide text-white/80 leading-relaxed"
+                  >
+                    {line}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            // No Lyrics
+            <div className="h-full flex items-center justify-center text-white/10 text-xs uppercase tracking-[0.5em]">
+              {state.file
+                ? "No Lyrics Found"
+                : "System Idle - Waiting for Input"}
             </div>
           )}
           {/* Minimal Fade Overlays */}
-          {!showPlaylist && state.lyrics.length > 0 && (
+          {!showPlaylist && hasLyrics && (
             <>
-              <div className="absolute top-0 left-0 w-full h-16 bg-gradient-to-b from-black to-transparent pointer-events-none"></div>
-              <div className="absolute bottom-0 left-0 w-full h-16 bg-gradient-to-t from-black to-transparent pointer-events-none"></div>
+              <div
+                className={`absolute top-0 left-0 w-full ${
+                  state.lyrics.isSynced ? "h-32" : "h-16"
+                } bg-gradient-to-b from-black to-transparent pointer-events-none`}
+              ></div>
+              <div
+                className={`absolute bottom-0 left-0 w-full ${
+                  state.lyrics.isSynced ? "h-32" : "h-16"
+                } bg-gradient-to-t from-black to-transparent pointer-events-none`}
+              ></div>
             </>
           )}
         </div>
@@ -417,7 +517,12 @@ const App: React.FC = () => {
                 ? `${state.currentSongIndex + 1} / ${state.playlist.length}`
                 : "NO TRACKS"}
             </div>
-            <div>STATUS: {state.isPlaying ? "PLAYING" : "PAUSED"}</div>
+            <div className="flex items-center gap-4">
+              {state.lyrics.isSynced && (
+                <span className="text-green-400">SYNCED</span>
+              )}
+              <span>STATUS: {state.isPlaying ? "PLAYING" : "PAUSED"}</span>
+            </div>
           </div>
 
           <div className="hidden md:flex border-l border-white/10 items-center px-6 gap-3">

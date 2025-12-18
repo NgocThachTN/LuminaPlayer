@@ -1,3 +1,14 @@
+export interface LyricLine {
+  time: number; // In seconds
+  text: string;
+}
+
+export interface LyricsResult {
+  synced: LyricLine[]; // Synced lyrics with timestamps
+  plain: string[]; // Plain lyrics without timestamps
+  isSynced: boolean; // Whether synced lyrics are available
+}
+
 export interface SongMetadata {
   title: string;
   artist: string;
@@ -9,7 +20,7 @@ export interface SongState {
   file: File | null;
   url: string;
   metadata: SongMetadata;
-  lyrics: string[]; // Plain lyrics - array of lines
+  lyrics: LyricsResult;
   isPlaying: boolean;
   currentTime: number;
   duration: number;
