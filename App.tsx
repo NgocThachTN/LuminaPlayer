@@ -51,6 +51,13 @@ const App: React.FC = () => {
 
   const playSong = async (file: File, index: number) => {
     setIsLoading(true);
+    setActiveLyricIndex(-1);
+    
+    // Scroll lyrics về đầu trang
+    if (lyricsContainerRef.current) {
+      lyricsContainerRef.current.scrollTop = 0;
+    }
+    
     const url = URL.createObjectURL(file);
     
     const metadata = await extractMetadata(file);
@@ -81,6 +88,14 @@ const App: React.FC = () => {
       setState(prev => ({ ...prev, isPlaying: false }));
     }
   };
+
+  // Scroll lyrics về đầu khi chuyển bài
+  useEffect(() => {
+    if (lyricsContainerRef.current) {
+      lyricsContainerRef.current.scrollTop = 0;
+    }
+    setActiveLyricIndex(-1);
+  }, [state.currentSongIndex]);
 
   useEffect(() => {
     if (state.isPlaying && audioRef.current) {
@@ -221,17 +236,23 @@ const App: React.FC = () => {
               className="h-full w-full overflow-y-auto lyrics-scroll py-[30vh] px-8 md:px-16"
             >
               {state.lyrics.length > 0 ? (
-                state.lyrics.map((line, idx) => (
-                  <div 
-                    key={idx}
-                    onClick={() => audioRef.current && (audioRef.current.currentTime = line.time)}
-                    className={`lyric-item text-xl md:text-2xl font-normal tracking-wide cursor-pointer ${
-                      idx === activeLyricIndex ? 'active-lyric' : ''
-                    }`}
-                  >
-                    {line.text.toUpperCase()}
-                  </div>
-                ))
+                state.lyrics.map((line, idx) => {
+                  // Tính khoảng cách với lyric đang active
+                  const distance = Math.abs(idx - activeLyricIndex);
+                  const isNear = distance > 0 && distance <= 2;
+                  
+                  return (
+                    <div 
+                      key={idx}
+                      onClick={() => audioRef.current && (audioRef.current.currentTime = line.time)}
+                      className={`lyric-item text-xl md:text-2xl font-normal tracking-wide cursor-pointer ${
+                        idx === activeLyricIndex ? 'active-lyric' : ''
+                      } ${isNear ? 'near-active' : ''}`}
+                    >
+                      {line.text.toUpperCase()}
+                    </div>
+                  );
+                })
               ) : (
                 <div className="h-full flex items-center justify-center text-white/10 text-xs uppercase tracking-[0.5em]">
                   {state.file ? 'No Metadata Found' : 'System Idle - Waiting for Input'}
