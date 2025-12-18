@@ -109,6 +109,22 @@ const App: React.FC = () => {
     }
   };
 
+  const playPrevious = () => {
+    // Nếu đang phát > 3 giây thì quay về đầu bài, không thì chuyển bài trước
+    if (audioRef.current && audioRef.current.currentTime > 3) {
+      audioRef.current.currentTime = 0;
+      setState((prev) => ({ ...prev, currentTime: 0 }));
+    } else if (state.currentSongIndex > 0) {
+      handleSongSelect(state.currentSongIndex - 1);
+    } else {
+      // Ở bài đầu tiên thì quay về đầu
+      if (audioRef.current) {
+        audioRef.current.currentTime = 0;
+        setState((prev) => ({ ...prev, currentTime: 0 }));
+      }
+    }
+  };
+
   // Scroll lyrics về đầu khi chuyển bài
   useEffect(() => {
     if (lyricsContainerRef.current) {
@@ -372,31 +388,61 @@ const App: React.FC = () => {
       </main>
 
       {/* Control Strip */}
-      <footer className="w-full border-t border-white/10 flex flex-col md:flex-row items-stretch">
-        {/* Progress Strip */}
-        <div className="w-full h-1 bg-white/5 relative group">
-          <div
-            className="absolute top-0 left-0 h-full bg-white transition-all duration-100 ease-linear"
-            style={{
-              width: `${(state.currentTime / state.duration) * 100 || 0}%`,
-            }}
-          ></div>
-          <input
-            type="range"
-            min="0"
-            max={state.duration || 0}
-            value={state.currentTime}
-            onChange={(e) => {
-              const time = Number(e.target.value);
-              if (audioRef.current) audioRef.current.currentTime = time;
-              setState((prev) => ({ ...prev, currentTime: time }));
-            }}
-            className="absolute top-0 left-0 w-full h-full opacity-0 z-10"
-          />
+      <footer className="w-full border-t border-white/10 flex flex-col">
+        {/* Progress Bar - Optimized */}
+        <div className="w-full px-4 py-3 flex items-center gap-3">
+          <span className="text-[10px] font-mono text-white/40 w-10 text-right">
+            {formatTime(state.currentTime)}
+          </span>
+          <div className="flex-1 h-1 bg-white/10 relative group cursor-pointer rounded-full">
+            <div
+              className="absolute top-0 left-0 h-full bg-white rounded-full transition-all duration-75 ease-linear"
+              style={{
+                width: `${(state.currentTime / state.duration) * 100 || 0}%`,
+              }}
+            ></div>
+            {/* Hover indicator */}
+            <div
+              className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+              style={{
+                left: `${(state.currentTime / state.duration) * 100 || 0}%`,
+                transform: "translate(-50%, -50%)",
+              }}
+            ></div>
+            <input
+              type="range"
+              min="0"
+              max={state.duration || 0}
+              value={state.currentTime}
+              onChange={(e) => {
+                const time = Number(e.target.value);
+                if (audioRef.current) audioRef.current.currentTime = time;
+                setState((prev) => ({ ...prev, currentTime: time }));
+              }}
+              className="absolute top-1/2 -translate-y-1/2 left-0 w-full h-4 opacity-0 cursor-pointer z-10"
+            />
+          </div>
+          <span className="text-[10px] font-mono text-white/40 w-10">
+            {formatTime(state.duration)}
+          </span>
         </div>
 
-        <div className="flex w-full items-center">
-          <div className="p-6 border-r border-white/10 flex items-center justify-center">
+        <div className="flex w-full items-center border-t border-white/10">
+          {/* Playback Controls */}
+          <div className="p-4 border-r border-white/10 flex items-center justify-center gap-2">
+            {/* Previous Button */}
+            <button
+              onClick={playPrevious}
+              disabled={state.playlist.length === 0}
+              className="square-btn w-10 h-10 flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed"
+              title="Previous"
+            >
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" />
+              </svg>
+            </button>
+
+            {/* Play/Pause Button */}
             <button
               onClick={togglePlay}
               className="square-btn w-12 h-12 flex items-center justify-center"
@@ -420,19 +466,37 @@ const App: React.FC = () => {
                 </svg>
               )}
             </button>
+
+            {/* Next Button */}
+            <button
+              onClick={playNext}
+              disabled={state.playlist.length === 0}
+              className="square-btn w-10 h-10 flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed"
+              title="Next"
+            >
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" />
+              </svg>
+            </button>
           </div>
 
           <div className="px-6 flex-1 flex items-center justify-between text-[10px] font-mono tracking-widest text-white/40 uppercase">
-            <div>STATUS: {state.isPlaying ? "PLAYING" : "PAUSED"}</div>
             <div>
-              {formatTime(state.currentTime)} / {formatTime(state.duration)}
+              {state.playlist.length > 0
+                ? `${state.currentSongIndex + 1} / ${state.playlist.length}`
+                : "NO TRACKS"}
             </div>
+            <div>STATUS: {state.isPlaying ? "PLAYING" : "PAUSED"}</div>
           </div>
 
-          <div className="hidden md:flex border-l border-white/10 items-center px-8 gap-4">
-            <span className="text-[10px] font-mono text-white/40 uppercase tracking-widest">
-              VOL
-            </span>
+          <div className="hidden md:flex border-l border-white/10 items-center px-6 gap-3">
+            <svg
+              className="w-4 h-4 text-white/40"
+              fill="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
+            </svg>
             <input
               type="range"
               min="0"
@@ -443,7 +507,7 @@ const App: React.FC = () => {
                 if (audioRef.current)
                   audioRef.current.volume = Number(e.target.value);
               }}
-              className="w-20 accent-white"
+              className="w-20 accent-white cursor-pointer"
             />
           </div>
         </div>

@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LUMINA - Minimalist Audio</title>
+    <title>Lumina Music Player</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
@@ -58,15 +58,33 @@
             cursor: pointer;
         }
         input[type="range"]::-webkit-slider-runnable-track {
-            background: rgba(255,255,255,0.1);
-            height: 2px;
+            background: rgba(255,255,255,0.15);
+            height: 4px;
+            border-radius: 2px;
         }
         input[type="range"]::-webkit-slider-thumb {
             -webkit-appearance: none;
-            height: 16px;
-            width: 4px;
+            height: 12px;
+            width: 12px;
             background: #fff;
-            margin-top: -7px;
+            border-radius: 50%;
+            margin-top: -4px;
+            transition: transform 0.1s ease;
+        }
+        input[type="range"]:hover::-webkit-slider-thumb {
+            transform: scale(1.2);
+        }
+        input[type="range"]::-moz-range-track {
+            background: rgba(255,255,255,0.15);
+            height: 4px;
+            border-radius: 2px;
+        }
+        input[type="range"]::-moz-range-thumb {
+            height: 12px;
+            width: 12px;
+            background: #fff;
+            border-radius: 50%;
+            border: none;
         }
         .square-btn {
             background: transparent;
