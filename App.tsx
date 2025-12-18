@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
-import { SongState, SongMetadata } from "./types";
-import { getSyncedLyrics } from "./services/geminiService";
+import { SongState } from "./types";
+import { getPlainLyrics } from "./services/geminiService";
 import { extractMetadata } from "./services/metadataService";
 import { Visualizer } from "./components/Visualizer";
 
@@ -21,9 +21,6 @@ const App: React.FC = () => {
   const [showPlaylist, setShowPlaylist] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
-  const [activeLyricIndex, setActiveLyricIndex] = useState(-1);
-  const lastScrollTimeRef = useRef(0);
-  const scrollTimeoutRef = useRef<number | null>(null);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -58,7 +55,6 @@ const App: React.FC = () => {
 
   const playSong = async (file: File, index: number) => {
     setIsLoading(true);
-    setActiveLyricIndex(-1);
 
     // Scroll lyrics về đầu trang
     if (lyricsContainerRef.current) {
@@ -83,7 +79,7 @@ const App: React.FC = () => {
     }));
 
     // Load lyrics in background
-    const lyrics = await getSyncedLyrics(metadata.title, metadata.artist);
+    const lyrics = await getPlainLyrics(metadata.title, metadata.artist);
 
     // Update lyrics when ready (only if still same song)
     setState((prev) => {
@@ -130,68 +126,13 @@ const App: React.FC = () => {
     if (lyricsContainerRef.current) {
       lyricsContainerRef.current.scrollTop = 0;
     }
-    setActiveLyricIndex(-1);
-    lastScrollTimeRef.current = 0;
   }, [state.currentSongIndex]);
-
-  // Cleanup animation frame on unmount
-  useEffect(() => {
-    return () => {
-      if (scrollTimeoutRef.current) {
-        cancelAnimationFrame(scrollTimeoutRef.current);
-      }
-    };
-  }, []);
 
   useEffect(() => {
     if (state.isPlaying && audioRef.current) {
       audioRef.current.play().catch((e) => console.error("Playback failed", e));
     }
   }, [state.url, state.isPlaying]);
-
-  // Optimized lyric tracking with debounced scroll
-  useEffect(() => {
-    if (state.lyrics.length === 0) return;
-
-    // Add small offset (200ms ahead) so lyrics feel more in sync
-    const currentTime = state.currentTime + 0.2;
-    const index = state.lyrics.findLastIndex((l) => l.time <= currentTime);
-
-    if (index !== activeLyricIndex && index >= 0) {
-      setActiveLyricIndex(index);
-
-      // Debounce scroll to avoid excessive calls
-      const now = Date.now();
-      if (now - lastScrollTimeRef.current > 100) {
-        lastScrollTimeRef.current = now;
-
-        if (scrollTimeoutRef.current) {
-          cancelAnimationFrame(scrollTimeoutRef.current);
-        }
-
-        scrollTimeoutRef.current = requestAnimationFrame(() => {
-          if (lyricsContainerRef.current) {
-            const activeElement = lyricsContainerRef.current.children[
-              index
-            ] as HTMLElement;
-            if (activeElement) {
-              const container = lyricsContainerRef.current;
-              const containerHeight = container.clientHeight;
-              const elementTop = activeElement.offsetTop;
-              const elementHeight = activeElement.clientHeight;
-              const targetScroll =
-                elementTop - containerHeight / 2 + elementHeight / 2;
-
-              container.scrollTo({
-                top: targetScroll,
-                behavior: "smooth",
-              });
-            }
-          }
-        });
-      }
-    }
-  }, [state.currentTime, state.lyrics, activeLyricIndex]);
 
   const togglePlay = () => {
     if (!audioRef.current) return;
@@ -276,7 +217,7 @@ const App: React.FC = () => {
               <p className="text-xs font-bold text-white/40 mb-2 uppercase tracking-[0.3em]">
                 Currently Playing
               </p>
-              <h2 className="text-4xl font-light mb-4 leading-tight tracking-tight">
+              <h2 className="text-4xl font-bold mb-4 leading-tight tracking-tight">
                 {state.metadata.title}
               </h2>
               <p className="text-white/40 text-sm font-medium uppercase tracking-[0.2em]">
@@ -339,49 +280,39 @@ const App: React.FC = () => {
             <div className="h-full w-full flex flex-col items-center justify-center gap-4">
               <div className="w-8 h-8 border border-white/10 border-t-white animate-spin"></div>
               <p className="text-[10px] uppercase tracking-[0.5em] text-white/30">
-                Syncing Lyrics
+                Loading Lyrics
               </p>
             </div>
           ) : (
             <div
               ref={lyricsContainerRef}
-              className="h-full w-full overflow-y-auto lyrics-scroll py-[30vh] px-8 md:px-16"
+              className="h-full w-full overflow-y-auto lyrics-scroll py-8 px-8 md:px-16"
             >
               {state.lyrics.length > 0 ? (
-                state.lyrics.map((line, idx) => {
-                  // Tính khoảng cách với lyric đang active
-                  const distance = Math.abs(idx - activeLyricIndex);
-                  const isNear = distance > 0 && distance <= 2;
-
-                  return (
+                <div className="flex flex-col gap-3">
+                  {state.lyrics.map((line, idx) => (
                     <div
                       key={idx}
-                      onClick={() =>
-                        audioRef.current &&
-                        (audioRef.current.currentTime = line.time)
-                      }
-                      className={`lyric-item text-xl md:text-2xl font-normal tracking-wide cursor-pointer ${
-                        idx === activeLyricIndex ? "active-lyric" : ""
-                      } ${isNear ? "near-active" : ""}`}
+                      className="text-lg md:text-xl font-normal tracking-wide text-white/80 leading-relaxed"
                     >
-                      {line.text.toUpperCase()}
+                      {line}
                     </div>
-                  );
-                })
+                  ))}
+                </div>
               ) : (
                 <div className="h-full flex items-center justify-center text-white/10 text-xs uppercase tracking-[0.5em]">
                   {state.file
-                    ? "No Metadata Found"
+                    ? "No Lyrics Found"
                     : "System Idle - Waiting for Input"}
                 </div>
               )}
             </div>
           )}
           {/* Minimal Fade Overlays */}
-          {!showPlaylist && (
+          {!showPlaylist && state.lyrics.length > 0 && (
             <>
-              <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-b from-black to-transparent pointer-events-none"></div>
-              <div className="absolute bottom-0 left-0 w-full h-32 bg-gradient-to-t from-black to-transparent pointer-events-none"></div>
+              <div className="absolute top-0 left-0 w-full h-16 bg-gradient-to-b from-black to-transparent pointer-events-none"></div>
+              <div className="absolute bottom-0 left-0 w-full h-16 bg-gradient-to-t from-black to-transparent pointer-events-none"></div>
             </>
           )}
         </div>

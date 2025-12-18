@@ -1,9 +1,3 @@
-
-export interface LyricLine {
-  time: number; // In seconds
-  text: string;
-}
-
 export interface SongMetadata {
   title: string;
   artist: string;
@@ -15,7 +9,7 @@ export interface SongState {
   file: File | null;
   url: string;
   metadata: SongMetadata;
-  lyrics: LyricLine[];
+  lyrics: string[]; // Plain lyrics - array of lines
   isPlaying: boolean;
   currentTime: number;
   duration: number;
