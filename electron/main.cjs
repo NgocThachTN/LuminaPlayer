@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require("electron");
 const path = require("path");
 const fs = require("fs");
+const jsmediatags = require("jsmediatags");
 
 // Store for config (API key + playlist)
 const configPath = path.join(app.getPath("userData"), "config.json");
@@ -203,4 +204,92 @@ ipcMain.handle("open-file-dialog", async () => {
   }
 
   return result.filePaths;
+});
+
+// Get basic metadata from filename (fast)
+ipcMain.handle("get-file-info", async (event, filePath) => {
+  try {
+    const name = path.basename(filePath);
+    const nameWithoutExt = name.replace(/\.[^/.]+$/, "");
+
+    // Try to parse artist - title format
+    let title = nameWithoutExt;
+    let artist = "Unknown Artist";
+
+    // Common formats: "Artist - Title" or "01 - Title" or "01. Title"
+    const dashMatch = nameWithoutExt.match(/^(.+?)\s*-\s*(.+)$/);
+    if (dashMatch) {
+      const first = dashMatch[1].trim();
+      const second = dashMatch[2].trim();
+      // If first part is a number, it's probably track number
+      if (/^\d+$/.test(first)) {
+        title = second;
+      } else {
+        artist = first;
+        title = second;
+      }
+    }
+
+    return { title, artist, name };
+  } catch (e) {
+    return {
+      title: path.basename(filePath).replace(/\.[^/.]+$/, ""),
+      artist: "Unknown Artist",
+      name: path.basename(filePath),
+    };
+  }
+});
+
+// Extract full metadata with cover art from file (using jsmediatags - reads only metadata, not entire file)
+ipcMain.handle("extract-metadata", async (event, filePath) => {
+  return new Promise((resolve) => {
+    const name = path.basename(filePath);
+    const nameWithoutExt = name.replace(/\.[^/.]+$/, "");
+
+    // Default metadata from filename
+    let defaultTitle = nameWithoutExt;
+    let defaultArtist = "Unknown Artist";
+
+    const dashMatch = nameWithoutExt.match(/^(.+?)\s*-\s*(.+)$/);
+    if (dashMatch) {
+      const first = dashMatch[1].trim();
+      const second = dashMatch[2].trim();
+      if (/^\d+$/.test(first)) {
+        defaultTitle = second;
+      } else {
+        defaultArtist = first;
+        defaultTitle = second;
+      }
+    }
+
+    jsmediatags.read(filePath, {
+      onSuccess: (tag) => {
+        const tags = tag.tags;
+        let cover = undefined;
+
+        // Extract cover art
+        if (tags.picture) {
+          const { data, format } = tags.picture;
+          const base64 = Buffer.from(data).toString("base64");
+          cover = `data:${format};base64,${base64}`;
+        }
+
+        resolve({
+          title: tags.title || defaultTitle,
+          artist: tags.artist || defaultArtist,
+          album: tags.album || "Unknown Album",
+          cover: cover,
+        });
+      },
+      onError: (error) => {
+        console.error("Error reading metadata:", error);
+        resolve({
+          title: defaultTitle,
+          artist: defaultArtist,
+          album: "Unknown Album",
+          cover: undefined,
+        });
+      },
+    });
+  });
 });

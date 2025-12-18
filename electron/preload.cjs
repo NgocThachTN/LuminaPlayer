@@ -21,5 +21,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openFolderDialog: () => ipcRenderer.invoke('open-folder-dialog'),
   openFileDialog: () => ipcRenderer.invoke('open-file-dialog'),
   
+  // Metadata
+  getFileInfo: (filePath) => ipcRenderer.invoke('get-file-info', filePath),
+  extractMetadata: (filePath) => ipcRenderer.invoke('extract-metadata', filePath),
+  
   isElectron: true
 });

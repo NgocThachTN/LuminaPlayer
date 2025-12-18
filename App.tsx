@@ -190,7 +190,6 @@ const App: React.FC = () => {
 
   // Play from playlist item (supports both File and path)
   const playSongFromItem = async (item: PlaylistItem, index: number) => {
-    setIsLoading(true);
     setActiveLyricIndex(-1);
 
     // Scroll lyrics về đầu trang
@@ -200,67 +199,106 @@ const App: React.FC = () => {
 
     let url = "";
     let file: File | null = null;
+    let metadataTitle = item.name.replace(/\.[^/.]+$/, "");
+    let metadataArtist = "Unknown Artist";
 
     // If we have a File object, use it
     if (item.file) {
       file = item.file;
       url = URL.createObjectURL(file);
     }
-    // If we only have path (loaded from Electron storage), read the file
-    else if (item.path && isElectron && window.electronAPI) {
-      const fileData = await window.electronAPI.readFileBuffer(item.path);
-      if (fileData) {
-        // Convert base64 to blob
-        const byteCharacters = atob(fileData.buffer);
-        const byteNumbers = new Array(byteCharacters.length);
-        for (let i = 0; i < byteCharacters.length; i++) {
-          byteNumbers[i] = byteCharacters.charCodeAt(i);
-        }
-        const byteArray = new Uint8Array(byteNumbers);
-        const blob = new Blob([byteArray], { type: fileData.mimeType });
-        url = URL.createObjectURL(blob);
-        file = new File([blob], fileData.name, { type: fileData.mimeType });
+    // If we only have path (Electron), use file:// protocol directly - MUCH faster!
+    else if (item.path && isElectron) {
+      // Use file:// protocol directly for instant playback
+      url = `file://${item.path.replace(/\\/g, "/")}`;
+      
+      // Get basic metadata from filename
+      if (window.electronAPI) {
+        const info = await window.electronAPI.getFileInfo(item.path);
+        metadataTitle = info.title;
+        metadataArtist = info.artist;
       }
     }
 
-    if (!url || !file) {
+    if (!url) {
       console.error("Could not load audio file");
-      setIsLoading(false);
       return;
     }
 
-    // Extract metadata first
-    const metadata = await extractMetadata(file);
-
-    // Start playing immediately without waiting for lyrics
+    // Start playing IMMEDIATELY with basic metadata (keep old cover to avoid flash)
     setState((prev) => ({
       ...prev,
       file,
       url,
-      metadata,
+      metadata: { 
+        title: metadataTitle, 
+        artist: metadataArtist,
+        cover: prev.metadata.cover // Keep old cover until new one loads
+      },
       lyrics: emptyLyrics,
       isPlaying: true,
       currentTime: 0,
       currentSongIndex: index,
     }));
 
-    // Save current index to Electron storage
+    // Save current index to Electron storage (don't await)
     if (isElectron && window.electronAPI) {
-      await window.electronAPI.saveCurrentIndex(index);
+      window.electronAPI.saveCurrentIndex(index);
     }
 
-    // Load lyrics in background
-    const lyrics = await getLyrics(metadata.title, metadata.artist);
+    // Load full metadata in background (FAST - only reads metadata, not entire file)
+    setIsLoading(true);
+    
+    const loadMetadataAndLyrics = async () => {
+      let finalTitle = metadataTitle;
+      let finalArtist = metadataArtist;
+      let finalMetadata = { title: metadataTitle, artist: metadataArtist, cover: undefined as string | undefined };
 
-    // Update lyrics when ready (only if still same song)
-    setState((prev) => {
-      if (prev.currentSongIndex === index) {
-        return { ...prev, lyrics };
+      // Extract metadata - use Electron IPC for path, or browser API for File
+      try {
+        if (item.path && isElectron && window.electronAPI) {
+          // Electron: Use IPC to extract metadata directly from file (FAST - only reads metadata bytes)
+          const metadata = await window.electronAPI.extractMetadata(item.path);
+          finalTitle = metadata.title;
+          finalArtist = metadata.artist;
+          finalMetadata = metadata;
+        } else if (file) {
+          // Browser: Use jsmediatags on File object
+          const metadata = await extractMetadata(file);
+          finalTitle = metadata.title;
+          finalArtist = metadata.artist;
+          finalMetadata = metadata;
+        }
+      } catch (e) {
+        console.error("Error extracting metadata:", e);
       }
-      return prev;
-    });
 
-    setIsLoading(false);
+      // Update metadata IMMEDIATELY (only if still same song)
+      setState((prev) => {
+        if (prev.currentSongIndex === index) {
+          return { ...prev, metadata: finalMetadata };
+        }
+        return prev;
+      });
+
+      // Now load lyrics with correct title/artist (this can be slow, but metadata is already shown)
+      try {
+        const lyrics = await getLyrics(finalTitle, finalArtist);
+        setState((prev) => {
+          if (prev.currentSongIndex === index) {
+            return { ...prev, lyrics };
+          }
+          return prev;
+        });
+      } catch (e) {
+        console.error("Error loading lyrics:", e);
+      }
+
+      setIsLoading(false);
+    };
+
+    // Run in background - don't block playback
+    loadMetadataAndLyrics();
   };
 
   // Legacy playSong for backward compatibility
@@ -283,7 +321,8 @@ const App: React.FC = () => {
   };
 
   const playNext = () => {
-    if (state.currentSongIndex < state.playlist.length - 1) {
+    const totalTracks = playlistItems.length || state.playlist.length;
+    if (state.currentSongIndex < totalTracks - 1) {
       handleSongSelect(state.currentSongIndex + 1);
     } else {
       setState((prev) => ({ ...prev, isPlaying: false }));
@@ -291,6 +330,7 @@ const App: React.FC = () => {
   };
 
   const playPrevious = () => {
+    const totalTracks = playlistItems.length || state.playlist.length;
     // Nếu đang phát > 3 giây thì quay về đầu bài, không thì chuyển bài trước
     if (audioRef.current && audioRef.current.currentTime > 3) {
       audioRef.current.currentTime = 0;
@@ -477,11 +517,13 @@ const App: React.FC = () => {
         {/* Left Section: Information Grid */}
         <div className="w-full md:w-[40%] flex flex-col border-r border-white/10">
           <div className="aspect-square w-full bg-neutral-900 border-b border-white/10 overflow-hidden">
-            <img
-              src={state.metadata.cover}
-              className="w-full h-full object-cover"
-              alt="Cover Art"
-            />
+            {state.metadata.cover && (
+              <img
+                src={state.metadata.cover}
+                className="w-full h-full object-cover transition-opacity duration-300"
+                alt="Cover Art"
+              />
+            )}
           </div>
 
           <div className="p-8 flex-1 flex flex-col justify-between">
@@ -674,7 +716,7 @@ const App: React.FC = () => {
             {/* Previous Button */}
             <button
               onClick={playPrevious}
-              disabled={state.playlist.length === 0}
+              disabled={(playlistItems.length || state.playlist.length) === 0}
               className="square-btn w-10 h-10 flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed"
               title="Previous"
             >
@@ -711,7 +753,7 @@ const App: React.FC = () => {
             {/* Next Button */}
             <button
               onClick={playNext}
-              disabled={state.playlist.length === 0}
+              disabled={(playlistItems.length || state.playlist.length) === 0}
               className="square-btn w-10 h-10 flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed"
               title="Next"
             >
