@@ -60,19 +60,32 @@ const App: React.FC = () => {
     
     const url = URL.createObjectURL(file);
     
+    // Extract metadata first
     const metadata = await extractMetadata(file);
-    const lyrics = await getSyncedLyrics(metadata.title, metadata.artist);
-
+    
+    // Start playing immediately without waiting for lyrics
     setState(prev => ({
       ...prev,
       file,
       url,
       metadata,
-      lyrics,
+      lyrics: [], // Clear old lyrics
       isPlaying: true,
       currentTime: 0,
       currentSongIndex: index,
     }));
+
+    // Load lyrics in background
+    const lyrics = await getSyncedLyrics(metadata.title, metadata.artist);
+    
+    // Update lyrics when ready (only if still same song)
+    setState(prev => {
+      if (prev.currentSongIndex === index) {
+        return { ...prev, lyrics };
+      }
+      return prev;
+    });
+    
     setIsLoading(false);
   };
 
