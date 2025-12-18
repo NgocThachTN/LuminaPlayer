@@ -1,15 +1,14 @@
-
-import React, { useState, useRef, useEffect } from 'react';
-import { SongState, SongMetadata } from './types';
-import { getSyncedLyrics } from './services/geminiService';
-import { extractMetadata } from './services/metadataService';
-import { Visualizer } from './components/Visualizer';
+import React, { useState, useRef, useEffect } from "react";
+import { SongState, SongMetadata } from "./types";
+import { getSyncedLyrics } from "./services/geminiService";
+import { extractMetadata } from "./services/metadataService";
+import { Visualizer } from "./components/Visualizer";
 
 const App: React.FC = () => {
   const [state, setState] = useState<SongState>({
     file: null,
-    url: '',
-    metadata: { title: 'READY TO PLAY', artist: 'SELECT A TRACK' },
+    url: "",
+    metadata: { title: "READY TO PLAY", artist: "SELECT A TRACK" },
     lyrics: [],
     isPlaying: false,
     currentTime: 0,
@@ -23,14 +22,20 @@ const App: React.FC = () => {
   const audioRef = useRef<HTMLAudioElement>(null);
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
   const [activeLyricIndex, setActiveLyricIndex] = useState(-1);
+  const lastScrollTimeRef = useRef(0);
+  const scrollTimeoutRef = useRef<number | null>(null);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    
+
     // Add single file to playlist and play it
     const newPlaylist = [file];
-    setState(prev => ({ ...prev, playlist: newPlaylist, currentSongIndex: 0 }));
+    setState((prev) => ({
+      ...prev,
+      playlist: newPlaylist,
+      currentSongIndex: 0,
+    }));
     await playSong(file, 0);
   };
 
@@ -38,13 +43,15 @@ const App: React.FC = () => {
     const files = e.target.files;
     if (!files) return;
 
-    const audioFiles = Array.from(files).filter(file => file.type.startsWith('audio/'));
+    const audioFiles = Array.from(files).filter((file: File) =>
+      file.type.startsWith("audio/")
+    );
     if (audioFiles.length === 0) return;
 
-    setState(prev => ({
+    setState((prev) => ({
       ...prev,
       playlist: audioFiles,
-      currentSongIndex: -1
+      currentSongIndex: -1,
     }));
     setShowPlaylist(true);
   };
@@ -52,19 +59,19 @@ const App: React.FC = () => {
   const playSong = async (file: File, index: number) => {
     setIsLoading(true);
     setActiveLyricIndex(-1);
-    
+
     // Scroll lyrics về đầu trang
     if (lyricsContainerRef.current) {
       lyricsContainerRef.current.scrollTop = 0;
     }
-    
+
     const url = URL.createObjectURL(file);
-    
+
     // Extract metadata first
     const metadata = await extractMetadata(file);
-    
+
     // Start playing immediately without waiting for lyrics
-    setState(prev => ({
+    setState((prev) => ({
       ...prev,
       file,
       url,
@@ -77,15 +84,15 @@ const App: React.FC = () => {
 
     // Load lyrics in background
     const lyrics = await getSyncedLyrics(metadata.title, metadata.artist);
-    
+
     // Update lyrics when ready (only if still same song)
-    setState(prev => {
+    setState((prev) => {
       if (prev.currentSongIndex === index) {
         return { ...prev, lyrics };
       }
       return prev;
     });
-    
+
     setIsLoading(false);
   };
 
@@ -98,7 +105,7 @@ const App: React.FC = () => {
     if (state.currentSongIndex < state.playlist.length - 1) {
       handleSongSelect(state.currentSongIndex + 1);
     } else {
-      setState(prev => ({ ...prev, isPlaying: false }));
+      setState((prev) => ({ ...prev, isPlaying: false }));
     }
   };
 
@@ -108,24 +115,64 @@ const App: React.FC = () => {
       lyricsContainerRef.current.scrollTop = 0;
     }
     setActiveLyricIndex(-1);
+    lastScrollTimeRef.current = 0;
   }, [state.currentSongIndex]);
+
+  // Cleanup animation frame on unmount
+  useEffect(() => {
+    return () => {
+      if (scrollTimeoutRef.current) {
+        cancelAnimationFrame(scrollTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (state.isPlaying && audioRef.current) {
-        audioRef.current.play().catch(e => console.error("Playback failed", e));
+      audioRef.current.play().catch((e) => console.error("Playback failed", e));
     }
   }, [state.url, state.isPlaying]);
 
-
+  // Optimized lyric tracking with debounced scroll
   useEffect(() => {
-    const index = state.lyrics.findLastIndex(l => l.time <= state.currentTime);
-    if (index !== activeLyricIndex) {
+    if (state.lyrics.length === 0) return;
+
+    // Add small offset (200ms ahead) so lyrics feel more in sync
+    const currentTime = state.currentTime + 0.2;
+    const index = state.lyrics.findLastIndex((l) => l.time <= currentTime);
+
+    if (index !== activeLyricIndex && index >= 0) {
       setActiveLyricIndex(index);
-      if (lyricsContainerRef.current) {
-        const activeElement = lyricsContainerRef.current.children[index] as HTMLElement;
-        if (activeElement) {
-          activeElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+      // Debounce scroll to avoid excessive calls
+      const now = Date.now();
+      if (now - lastScrollTimeRef.current > 100) {
+        lastScrollTimeRef.current = now;
+
+        if (scrollTimeoutRef.current) {
+          cancelAnimationFrame(scrollTimeoutRef.current);
         }
+
+        scrollTimeoutRef.current = requestAnimationFrame(() => {
+          if (lyricsContainerRef.current) {
+            const activeElement = lyricsContainerRef.current.children[
+              index
+            ] as HTMLElement;
+            if (activeElement) {
+              const container = lyricsContainerRef.current;
+              const containerHeight = container.clientHeight;
+              const elementTop = activeElement.offsetTop;
+              const elementHeight = activeElement.clientHeight;
+              const targetScroll =
+                elementTop - containerHeight / 2 + elementHeight / 2;
+
+              container.scrollTo({
+                top: targetScroll,
+                behavior: "smooth",
+              });
+            }
+          }
+        });
       }
     }
   }, [state.currentTime, state.lyrics, activeLyricIndex]);
@@ -133,77 +180,99 @@ const App: React.FC = () => {
   const togglePlay = () => {
     if (!audioRef.current) return;
     state.isPlaying ? audioRef.current.pause() : audioRef.current.play();
-    setState(prev => ({ ...prev, isPlaying: !prev.isPlaying }));
+    setState((prev) => ({ ...prev, isPlaying: !prev.isPlaying }));
   };
 
   const formatTime = (time: number) => {
     const mins = Math.floor(time / 60);
     const secs = Math.floor(time % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
   return (
     <div className="h-screen w-full flex flex-col bg-black text-white overflow-hidden">
-      
       {/* Top Border Navigation */}
       <header className="w-full flex justify-between items-center border-b border-white/10 px-6 py-4 z-50">
         <div className="flex items-center gap-4">
-          <span className="font-black text-2xl tracking-[0.2em]">LUMINA.SYS</span>
+          <span className="font-black text-2xl tracking-[0.2em]">
+            LUMINA.SYS
+          </span>
         </div>
-        
+
         <div className="flex items-center gap-0">
-          <button 
+          <button
             onClick={() => setShowPlaylist(false)}
-            className={`square-btn px-6 py-2 text-xs font-bold uppercase tracking-widest cursor-pointer border-l border-white/10 ${!showPlaylist ? 'bg-white text-black' : 'text-white/40 hover:text-white'}`}
+            className={`square-btn px-6 py-2 text-xs font-bold uppercase tracking-widest cursor-pointer border-l border-white/10 ${
+              !showPlaylist
+                ? "bg-white text-black"
+                : "text-white/40 hover:text-white"
+            }`}
           >
             Lyrics
           </button>
-          <button 
+          <button
             onClick={() => setShowPlaylist(true)}
-            className={`square-btn px-6 py-2 text-xs font-bold uppercase tracking-widest cursor-pointer border-l border-white/10 ${showPlaylist ? 'bg-white text-black' : 'text-white/40 hover:text-white'}`}
+            className={`square-btn px-6 py-2 text-xs font-bold uppercase tracking-widest cursor-pointer border-l border-white/10 ${
+              showPlaylist
+                ? "bg-white text-black"
+                : "text-white/40 hover:text-white"
+            }`}
           >
             Playlist
           </button>
           <label className="square-btn px-6 py-2 text-xs font-bold uppercase tracking-widest cursor-pointer border-l border-white/10">
             Import Folder
-            <input 
-              type="file" 
+            <input
+              type="file"
               // @ts-ignore
-              webkitdirectory="" 
-              directory="" 
-              className="hidden" 
-              onChange={handleFolderChange} 
+              webkitdirectory=""
+              directory=""
+              className="hidden"
+              onChange={handleFolderChange}
             />
           </label>
           <label className="square-btn px-6 py-2 text-xs font-bold uppercase tracking-widest cursor-pointer border-l border-white/10">
             Import Track
-            <input type="file" accept="audio/*" className="hidden" onChange={handleFileChange} />
+            <input
+              type="file"
+              accept="audio/*"
+              className="hidden"
+              onChange={handleFileChange}
+            />
           </label>
         </div>
       </header>
 
       {/* Grid Content Area */}
       <main className="flex-1 w-full flex flex-col md:flex-row overflow-hidden">
-        
         {/* Left Section: Information Grid */}
         <div className="w-full md:w-[40%] flex flex-col border-r border-white/10">
           <div className="aspect-square w-full bg-neutral-900 border-b border-white/10 overflow-hidden">
-            <img 
-              src={state.metadata.cover} 
+            <img
+              src={state.metadata.cover}
               className="w-full h-full object-cover"
               alt="Cover Art"
             />
           </div>
-          
+
           <div className="p-8 flex-1 flex flex-col justify-between">
             <div>
-              <p className="text-xs font-bold text-white/40 mb-2 uppercase tracking-[0.3em]">Currently Playing</p>
-              <h2 className="text-4xl font-light mb-4 leading-tight tracking-tight">{state.metadata.title}</h2>
-              <p className="text-white/40 text-sm font-medium uppercase tracking-[0.2em]">{state.metadata.artist}</p>
+              <p className="text-xs font-bold text-white/40 mb-2 uppercase tracking-[0.3em]">
+                Currently Playing
+              </p>
+              <h2 className="text-4xl font-light mb-4 leading-tight tracking-tight">
+                {state.metadata.title}
+              </h2>
+              <p className="text-white/40 text-sm font-medium uppercase tracking-[0.2em]">
+                {state.metadata.artist}
+              </p>
             </div>
 
             <div className="mt-8">
-              <Visualizer audioElement={audioRef.current} isPlaying={state.isPlaying} />
+              <Visualizer
+                audioElement={audioRef.current}
+                isPlaying={state.isPlaying}
+              />
             </div>
           </div>
         </div>
@@ -213,27 +282,39 @@ const App: React.FC = () => {
           {showPlaylist ? (
             <div className="flex flex-col h-full">
               <div className="w-full px-8 md:px-16 py-6 border-b border-white/10 bg-black z-20 shrink-0">
-                <h3 className="text-xs font-bold text-white/40 uppercase tracking-[0.3em]">Playlist ({state.playlist.length})</h3>
+                <h3 className="text-xs font-bold text-white/40 uppercase tracking-[0.3em]">
+                  Playlist ({state.playlist.length})
+                </h3>
               </div>
               <div className="flex-1 w-full overflow-y-auto lyrics-scroll p-8 md:px-16">
                 <div className="flex flex-col gap-2">
                   {state.playlist.map((file, idx) => (
-                    <div 
+                    <div
                       key={idx}
                       onClick={() => handleSongSelect(idx)}
                       className={`p-4 border border-white/10 cursor-pointer hover:bg-white/5 transition-colors flex items-center gap-4 ${
-                        idx === state.currentSongIndex ? 'bg-white/10 border-white/30' : ''
+                        idx === state.currentSongIndex
+                          ? "bg-white/10 border-white/30"
+                          : ""
                       }`}
                     >
-                      <span className="text-xs font-mono text-white/40 w-6">{String(idx + 1).padStart(2, '0')}</span>
-                      <span className="text-sm font-medium tracking-wider truncate flex-1">{file.name.replace(/\.[^/.]+$/, "")}</span>
+                      <span className="text-xs font-mono text-white/40 w-6">
+                        {String(idx + 1).padStart(2, "0")}
+                      </span>
+                      <span className="text-sm font-medium tracking-wider truncate flex-1">
+                        {file.name.replace(/\.[^/.]+$/, "")}
+                      </span>
                       {idx === state.currentSongIndex && (
-                        <span className="text-[10px] uppercase tracking-widest text-white/60 animate-pulse">Playing</span>
+                        <span className="text-[10px] uppercase tracking-widest text-white/60 animate-pulse">
+                          Playing
+                        </span>
                       )}
                     </div>
                   ))}
                   {state.playlist.length === 0 && (
-                    <div className="text-white/20 text-sm uppercase tracking-widest text-center py-10">No tracks in playlist</div>
+                    <div className="text-white/20 text-sm uppercase tracking-widest text-center py-10">
+                      No tracks in playlist
+                    </div>
                   )}
                 </div>
               </div>
@@ -241,10 +322,12 @@ const App: React.FC = () => {
           ) : isLoading ? (
             <div className="h-full w-full flex flex-col items-center justify-center gap-4">
               <div className="w-8 h-8 border border-white/10 border-t-white animate-spin"></div>
-              <p className="text-[10px] uppercase tracking-[0.5em] text-white/30">Syncing Lyrics</p>
+              <p className="text-[10px] uppercase tracking-[0.5em] text-white/30">
+                Syncing Lyrics
+              </p>
             </div>
           ) : (
-            <div 
+            <div
               ref={lyricsContainerRef}
               className="h-full w-full overflow-y-auto lyrics-scroll py-[30vh] px-8 md:px-16"
             >
@@ -253,14 +336,17 @@ const App: React.FC = () => {
                   // Tính khoảng cách với lyric đang active
                   const distance = Math.abs(idx - activeLyricIndex);
                   const isNear = distance > 0 && distance <= 2;
-                  
+
                   return (
-                    <div 
+                    <div
                       key={idx}
-                      onClick={() => audioRef.current && (audioRef.current.currentTime = line.time)}
+                      onClick={() =>
+                        audioRef.current &&
+                        (audioRef.current.currentTime = line.time)
+                      }
                       className={`lyric-item text-xl md:text-2xl font-normal tracking-wide cursor-pointer ${
-                        idx === activeLyricIndex ? 'active-lyric' : ''
-                      } ${isNear ? 'near-active' : ''}`}
+                        idx === activeLyricIndex ? "active-lyric" : ""
+                      } ${isNear ? "near-active" : ""}`}
                     >
                       {line.text.toUpperCase()}
                     </div>
@@ -268,7 +354,9 @@ const App: React.FC = () => {
                 })
               ) : (
                 <div className="h-full flex items-center justify-center text-white/10 text-xs uppercase tracking-[0.5em]">
-                  {state.file ? 'No Metadata Found' : 'System Idle - Waiting for Input'}
+                  {state.file
+                    ? "No Metadata Found"
+                    : "System Idle - Waiting for Input"}
                 </div>
               )}
             </div>
@@ -285,70 +373,97 @@ const App: React.FC = () => {
 
       {/* Control Strip */}
       <footer className="w-full border-t border-white/10 flex flex-col md:flex-row items-stretch">
-        
         {/* Progress Strip */}
         <div className="w-full h-1 bg-white/5 relative group">
-           <div 
-             className="absolute top-0 left-0 h-full bg-white transition-all duration-100 ease-linear" 
-             style={{ width: `${(state.currentTime / state.duration) * 100 || 0}%` }}
-           ></div>
-           <input 
-              type="range" 
-              min="0" 
-              max={state.duration || 0} 
-              value={state.currentTime} 
-              onChange={(e) => {
-                const time = Number(e.target.value);
-                if(audioRef.current) audioRef.current.currentTime = time;
-                setState(prev => ({ ...prev, currentTime: time }));
-              }}
-              className="absolute top-0 left-0 w-full h-full opacity-0 z-10"
-            />
+          <div
+            className="absolute top-0 left-0 h-full bg-white transition-all duration-100 ease-linear"
+            style={{
+              width: `${(state.currentTime / state.duration) * 100 || 0}%`,
+            }}
+          ></div>
+          <input
+            type="range"
+            min="0"
+            max={state.duration || 0}
+            value={state.currentTime}
+            onChange={(e) => {
+              const time = Number(e.target.value);
+              if (audioRef.current) audioRef.current.currentTime = time;
+              setState((prev) => ({ ...prev, currentTime: time }));
+            }}
+            className="absolute top-0 left-0 w-full h-full opacity-0 z-10"
+          />
         </div>
 
         <div className="flex w-full items-center">
           <div className="p-6 border-r border-white/10 flex items-center justify-center">
-            <button 
-              onClick={togglePlay} 
+            <button
+              onClick={togglePlay}
               className="square-btn w-12 h-12 flex items-center justify-center"
             >
               {state.isPlaying ? (
-                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                <svg
+                  className="w-6 h-6"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <rect x="6" y="4" width="4" height="16" />
+                  <rect x="14" y="4" width="4" height="16" />
+                </svg>
               ) : (
-                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                <svg
+                  className="w-6 h-6"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path d="M8 5v14l11-7z" />
+                </svg>
               )}
             </button>
           </div>
 
           <div className="px-6 flex-1 flex items-center justify-between text-[10px] font-mono tracking-widest text-white/40 uppercase">
-             <div>
-                STATUS: {state.isPlaying ? 'PLAYING' : 'PAUSED'}
-             </div>
-             <div>
-                {formatTime(state.currentTime)} / {formatTime(state.duration)}
-             </div>
+            <div>STATUS: {state.isPlaying ? "PLAYING" : "PAUSED"}</div>
+            <div>
+              {formatTime(state.currentTime)} / {formatTime(state.duration)}
+            </div>
           </div>
 
           <div className="hidden md:flex border-l border-white/10 items-center px-8 gap-4">
-             <span className="text-[10px] font-mono text-white/40 uppercase tracking-widest">VOL</span>
-             <input 
-              type="range" 
-              min="0" 
-              max="1" 
-              step="0.01" 
+            <span className="text-[10px] font-mono text-white/40 uppercase tracking-widest">
+              VOL
+            </span>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
               defaultValue="0.8"
-              onChange={(e) => { if(audioRef.current) audioRef.current.volume = Number(e.target.value); }}
+              onChange={(e) => {
+                if (audioRef.current)
+                  audioRef.current.volume = Number(e.target.value);
+              }}
               className="w-20 accent-white"
-             />
+            />
           </div>
         </div>
       </footer>
 
-      <audio 
-        ref={audioRef} 
-        src={state.url} 
-        onTimeUpdate={() => setState(prev => ({ ...prev, currentTime: audioRef.current?.currentTime || 0 }))}
-        onLoadedMetadata={() => setState(prev => ({ ...prev, duration: audioRef.current?.duration || 0 }))}
+      <audio
+        ref={audioRef}
+        src={state.url}
+        onTimeUpdate={() =>
+          setState((prev) => ({
+            ...prev,
+            currentTime: audioRef.current?.currentTime || 0,
+          }))
+        }
+        onLoadedMetadata={() =>
+          setState((prev) => ({
+            ...prev,
+            duration: audioRef.current?.duration || 0,
+          }))
+        }
         onEnded={playNext}
       />
     </div>
