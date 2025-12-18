@@ -162,7 +162,7 @@ const App: React.FC = () => {
           <div className="aspect-square w-full bg-neutral-900 border-b border-white/10 overflow-hidden">
             <img 
               src={state.metadata.cover} 
-              className="w-full h-full object-cover grayscale opacity-80 hover:grayscale-0 transition-all duration-700"
+              className="w-full h-full object-cover"
               alt="Cover Art"
             />
           </div>

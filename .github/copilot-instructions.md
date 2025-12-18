@@ -34,6 +34,13 @@ GEMINI_API_KEY=your_key_here
 
 ## Code Conventions
 
+### Coding Philosophy
+- **Minimalist code** - Viết code đơn giản, dễ đọc cho người mới học
+- **Avoid complexity** - Không dùng các hàm phức tạp như `reduce`, `flatMap`, destructuring lồng nhau
+- **Prefer basic loops** - Ưu tiên `for`, `forEach`, `map` thay vì các pattern phức tạp
+- **Simple functions** - Mỗi hàm chỉ làm một việc, tối đa 20-30 dòng
+- **Clear variable names** - Đặt tên biến rõ ràng, không viết tắt khó hiểu
+
 ### Styling
 - **Tailwind CSS only** - loaded via CDN in `index.html`, no CSS modules
 - **Design system**: Black background, white text, `Space Grotesk` font
