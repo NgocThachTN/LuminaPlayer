@@ -1,8 +1,10 @@
 # LuminaPlayer
 
 Minimalist music player with synchronized lyrics display.
+<img width="1919" height="1074" alt="image" src="https://github.com/user-attachments/assets/ff89a08c-5977-42b9-a665-b90899b14552" />
 
 ## Features
+
 
 - Import audio files or folders
 - Auto-fetch synced lyrics from lrclib.net
