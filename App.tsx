@@ -194,8 +194,8 @@ const App: React.FC = () => {
       {/* Top Border Navigation */}
       <header className="w-full flex justify-between items-center border-b border-white/10 px-6 py-4 z-50">
         <div className="flex items-center gap-4">
-          <span className="font-black text-2xl tracking-[0.2em]">
-            LUMINA.SYS
+          <span className="font-black text-2xl tracking-[0.1em]">
+            Lumina Music Player
           </span>
         </div>
 
