@@ -1,6 +1,35 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { LyricLine, LyricsResult } from "../types";
 
+// Get API key - from Electron storage or environment variable
+let cachedApiKey: string | null = null;
+
+export const getApiKey = async (): Promise<string> => {
+  if (cachedApiKey) return cachedApiKey;
+
+  // Try Electron first
+  if (window.electronAPI) {
+    cachedApiKey = await window.electronAPI.getApiKey();
+    if (cachedApiKey) return cachedApiKey;
+  }
+
+  // Fallback to environment variable (web mode)
+  cachedApiKey = process.env.API_KEY || "";
+  return cachedApiKey;
+};
+
+export const setApiKey = async (apiKey: string): Promise<void> => {
+  cachedApiKey = apiKey;
+  if (window.electronAPI) {
+    await window.electronAPI.setApiKey(apiKey);
+  }
+};
+
+export const hasApiKey = async (): Promise<boolean> => {
+  const key = await getApiKey();
+  return !!key;
+};
+
 // Fetch lyrics from lrclib.net API - prioritize synced, fallback to plain
 const fetchLrcLibLyrics = async (
   title: string,
@@ -213,8 +242,14 @@ export const getLyrics = async (
   }
 
   // 2. Fallback to Gemini AI (plain lyrics only)
+  const apiKey = await getApiKey();
+  if (!apiKey) {
+    console.log("No API key available for Gemini fallback");
+    return emptyResult;
+  }
+
   console.log("No lrclib lyrics found, using Gemini AI...");
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = new GoogleGenAI({ apiKey });
 
   const prompt = `Tìm lời bài hát "${title}" của "${artist}".
   

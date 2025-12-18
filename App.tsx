@@ -3,8 +3,19 @@ import { SongState, LyricsResult } from "./types";
 import { getLyrics } from "./services/geminiService";
 import { extractMetadata } from "./services/metadataService";
 import { Visualizer } from "./components/Visualizer";
+import { ApiKeyModal } from "./components/ApiKeyModal";
 
 const emptyLyrics: LyricsResult = { synced: [], plain: [], isSynced: false };
+
+// Helper to check if running in Electron
+const isElectron = !!window.electronAPI;
+
+// Playlist item can be File (web) or path string (Electron saved)
+interface PlaylistItem {
+  file?: File;
+  path?: string;
+  name: string;
+}
 
 const App: React.FC = () => {
   const [state, setState] = useState<SongState>({
@@ -19,46 +30,166 @@ const App: React.FC = () => {
     currentSongIndex: -1,
   });
 
+  // Extended playlist with paths for Electron persistence
+  const [playlistItems, setPlaylistItems] = useState<PlaylistItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [showPlaylist, setShowPlaylist] = useState(false);
+  const [showApiKeyModal, setShowApiKeyModal] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
   const [activeLyricIndex, setActiveLyricIndex] = useState(-1);
   const lastScrollTimeRef = useRef(0);
   const scrollTimeoutRef = useRef<number | null>(null);
 
+  // Load saved playlist on startup (Electron only)
+  useEffect(() => {
+    const loadSavedPlaylist = async () => {
+      if (!isElectron || !window.electronAPI) return;
+
+      try {
+        const savedPaths = await window.electronAPI.getPlaylist();
+        if (savedPaths && savedPaths.length > 0) {
+          // Filter out paths that no longer exist
+          const validPaths: string[] = [];
+          for (const p of savedPaths) {
+            const exists = await window.electronAPI.fileExists(p);
+            if (exists) validPaths.push(p);
+          }
+
+          if (validPaths.length > 0) {
+            const items: PlaylistItem[] = validPaths.map((p) => ({
+              path: p,
+              name: p.split(/[/\\]/).pop() || p,
+            }));
+            setPlaylistItems(items);
+            setShowPlaylist(true);
+          }
+        }
+      } catch (e) {
+        console.error("Error loading saved playlist:", e);
+      }
+    };
+
+    loadSavedPlaylist();
+  }, []);
+
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Add single file to playlist and play it
-    const newPlaylist = [file];
+    // Get file path for Electron persistence
+    const filePath = (file as any).path || "";
+
+    const items: PlaylistItem[] = [
+      {
+        file,
+        path: filePath,
+        name: file.name,
+      },
+    ];
+
+    setPlaylistItems(items);
     setState((prev) => ({
       ...prev,
-      playlist: newPlaylist,
+      playlist: [file],
       currentSongIndex: 0,
     }));
-    await playSong(file, 0);
+
+    // Save to Electron storage
+    if (isElectron && window.electronAPI && filePath) {
+      await window.electronAPI.savePlaylist([filePath]);
+    }
+
+    await playSongFromItem(items[0], 0);
   };
 
-  const handleFolderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFolderChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
 
-    const audioFiles = Array.from(files).filter((file: File) =>
-      file.type.startsWith("audio/")
+    const audioFiles: File[] = Array.from(files).filter(
+      (file): file is File =>
+        file instanceof File && file.type.startsWith("audio/")
     );
     if (audioFiles.length === 0) return;
 
+    // Create playlist items with paths
+    const items: PlaylistItem[] = audioFiles.map((file: File) => ({
+      file,
+      path: (file as any).path || "",
+      name: file.name,
+    }));
+
+    setPlaylistItems(items);
     setState((prev) => ({
       ...prev,
       playlist: audioFiles,
       currentSongIndex: -1,
     }));
+
+    // Save paths to Electron storage
+    if (isElectron && window.electronAPI) {
+      const paths = items.map((item) => item.path).filter((p) => p);
+      if (paths.length > 0) {
+        await window.electronAPI.savePlaylist(paths);
+      }
+    }
+
     setShowPlaylist(true);
   };
 
-  const playSong = async (file: File, index: number) => {
+  // Electron: Open folder using native dialog
+  const handleElectronFolderSelect = async () => {
+    if (!window.electronAPI) return;
+
+    const filePaths = await window.electronAPI.openFolderDialog();
+    if (filePaths.length === 0) return;
+
+    const items: PlaylistItem[] = filePaths.map((p) => ({
+      path: p,
+      name: p.split(/[/\\]/).pop() || p,
+    }));
+
+    setPlaylistItems(items);
+    setState((prev) => ({
+      ...prev,
+      playlist: [],
+      currentSongIndex: -1,
+    }));
+
+    // Save to Electron storage
+    await window.electronAPI.savePlaylist(filePaths);
+    setShowPlaylist(true);
+  };
+
+  // Electron: Open file using native dialog
+  const handleElectronFileSelect = async () => {
+    if (!window.electronAPI) return;
+
+    const filePaths = await window.electronAPI.openFileDialog();
+    if (filePaths.length === 0) return;
+
+    const items: PlaylistItem[] = filePaths.map((p) => ({
+      path: p,
+      name: p.split(/[/\\]/).pop() || p,
+    }));
+
+    setPlaylistItems(items);
+    setState((prev) => ({
+      ...prev,
+      playlist: [],
+      currentSongIndex: 0,
+    }));
+
+    // Save to Electron storage
+    await window.electronAPI.savePlaylist(filePaths);
+
+    // Auto play first track
+    await playSongFromItem(items[0], 0);
+  };
+
+  // Play from playlist item (supports both File and path)
+  const playSongFromItem = async (item: PlaylistItem, index: number) => {
     setIsLoading(true);
     setActiveLyricIndex(-1);
 
@@ -67,7 +198,36 @@ const App: React.FC = () => {
       lyricsContainerRef.current.scrollTop = 0;
     }
 
-    const url = URL.createObjectURL(file);
+    let url = "";
+    let file: File | null = null;
+
+    // If we have a File object, use it
+    if (item.file) {
+      file = item.file;
+      url = URL.createObjectURL(file);
+    }
+    // If we only have path (loaded from Electron storage), read the file
+    else if (item.path && isElectron && window.electronAPI) {
+      const fileData = await window.electronAPI.readFileBuffer(item.path);
+      if (fileData) {
+        // Convert base64 to blob
+        const byteCharacters = atob(fileData.buffer);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: fileData.mimeType });
+        url = URL.createObjectURL(blob);
+        file = new File([blob], fileData.name, { type: fileData.mimeType });
+      }
+    }
+
+    if (!url || !file) {
+      console.error("Could not load audio file");
+      setIsLoading(false);
+      return;
+    }
 
     // Extract metadata first
     const metadata = await extractMetadata(file);
@@ -84,6 +244,11 @@ const App: React.FC = () => {
       currentSongIndex: index,
     }));
 
+    // Save current index to Electron storage
+    if (isElectron && window.electronAPI) {
+      await window.electronAPI.saveCurrentIndex(index);
+    }
+
     // Load lyrics in background
     const lyrics = await getLyrics(metadata.title, metadata.artist);
 
@@ -98,8 +263,22 @@ const App: React.FC = () => {
     setIsLoading(false);
   };
 
+  // Legacy playSong for backward compatibility
+  const playSong = async (file: File, index: number) => {
+    const item: PlaylistItem = {
+      file,
+      path: (file as any).path || "",
+      name: file.name,
+    };
+    await playSongFromItem(item, index);
+  };
+
   const handleSongSelect = (index: number) => {
-    playSong(state.playlist[index], index);
+    if (playlistItems[index]) {
+      playSongFromItem(playlistItems[index], index);
+    } else if (state.playlist[index]) {
+      playSong(state.playlist[index], index);
+    }
     setShowPlaylist(false); // Chuyển sang tab Lyrics sau khi chọn bài
   };
 
@@ -243,26 +422,53 @@ const App: React.FC = () => {
           >
             Playlist
           </button>
-          <label className="square-btn px-6 py-2 text-xs font-bold uppercase tracking-widest cursor-pointer border-l border-white/10">
-            Import Folder
-            <input
-              type="file"
-              // @ts-ignore
-              webkitdirectory=""
-              directory=""
-              className="hidden"
-              onChange={handleFolderChange}
-            />
-          </label>
-          <label className="square-btn px-6 py-2 text-xs font-bold uppercase tracking-widest cursor-pointer border-l border-white/10">
-            Import Track
-            <input
-              type="file"
-              accept="audio/*"
-              className="hidden"
-              onChange={handleFileChange}
-            />
-          </label>
+          {isElectron ? (
+            <button
+              onClick={handleElectronFolderSelect}
+              className="square-btn px-6 py-2 text-xs font-bold uppercase tracking-widest cursor-pointer border-l border-white/10"
+            >
+              Import Folder
+            </button>
+          ) : (
+            <label className="square-btn px-6 py-2 text-xs font-bold uppercase tracking-widest cursor-pointer border-l border-white/10">
+              Import Folder
+              <input
+                type="file"
+                // @ts-ignore
+                webkitdirectory=""
+                directory=""
+                className="hidden"
+                onChange={handleFolderChange}
+              />
+            </label>
+          )}
+          {isElectron ? (
+            <button
+              onClick={handleElectronFileSelect}
+              className="square-btn px-6 py-2 text-xs font-bold uppercase tracking-widest cursor-pointer border-l border-white/10"
+            >
+              Import Track
+            </button>
+          ) : (
+            <label className="square-btn px-6 py-2 text-xs font-bold uppercase tracking-widest cursor-pointer border-l border-white/10">
+              Import Track
+              <input
+                type="file"
+                accept="audio/*"
+                className="hidden"
+                onChange={handleFileChange}
+              />
+            </label>
+          )}
+          <button
+            onClick={() => setShowApiKeyModal(true)}
+            className="square-btn px-4 py-2 text-xs font-bold uppercase tracking-widest cursor-pointer border-l border-white/10"
+            title="Settings"
+          >
+            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" />
+            </svg>
+          </button>
         </div>
       </header>
 
@@ -306,12 +512,15 @@ const App: React.FC = () => {
             <div className="flex flex-col h-full">
               <div className="w-full px-8 md:px-16 py-6 border-b border-white/10 bg-black z-20 shrink-0">
                 <h3 className="text-xs font-bold text-white/40 uppercase tracking-[0.3em]">
-                  Playlist ({state.playlist.length})
+                  Playlist ({playlistItems.length || state.playlist.length})
                 </h3>
               </div>
               <div className="flex-1 w-full overflow-y-auto lyrics-scroll p-8 md:px-16">
                 <div className="flex flex-col gap-2">
-                  {state.playlist.map((file, idx) => (
+                  {(playlistItems.length > 0
+                    ? playlistItems
+                    : state.playlist.map((f) => ({ file: f, name: f.name }))
+                  ).map((item, idx) => (
                     <div
                       key={idx}
                       onClick={() => handleSongSelect(idx)}
@@ -325,7 +534,7 @@ const App: React.FC = () => {
                         {String(idx + 1).padStart(2, "0")}
                       </span>
                       <span className="text-sm font-medium tracking-wider truncate flex-1">
-                        {file.name.replace(/\.[^/.]+$/, "")}
+                        {item.name.replace(/\.[^/.]+$/, "")}
                       </span>
                       {idx === state.currentSongIndex && (
                         <span className="text-[10px] uppercase tracking-widest text-white/60 animate-pulse">
@@ -334,11 +543,12 @@ const App: React.FC = () => {
                       )}
                     </div>
                   ))}
-                  {state.playlist.length === 0 && (
-                    <div className="text-white/20 text-sm uppercase tracking-widest text-center py-10">
-                      No tracks in playlist
-                    </div>
-                  )}
+                  {playlistItems.length === 0 &&
+                    state.playlist.length === 0 && (
+                      <div className="text-white/20 text-sm uppercase tracking-widest text-center py-10">
+                        No tracks in playlist
+                      </div>
+                    )}
                 </div>
               </div>
             </div>
@@ -513,8 +723,10 @@ const App: React.FC = () => {
 
           <div className="px-6 flex-1 flex items-center justify-between text-[10px] font-mono tracking-widest text-white/40 uppercase">
             <div>
-              {state.playlist.length > 0
-                ? `${state.currentSongIndex + 1} / ${state.playlist.length}`
+              {(playlistItems.length || state.playlist.length) > 0
+                ? `${state.currentSongIndex + 1} / ${
+                    playlistItems.length || state.playlist.length
+                  }`
                 : "NO TRACKS"}
             </div>
             <div className="flex items-center gap-4">
@@ -565,6 +777,12 @@ const App: React.FC = () => {
           }))
         }
         onEnded={playNext}
+      />
+
+      <ApiKeyModal
+        isOpen={showApiKeyModal}
+        onClose={() => setShowApiKeyModal(false)}
+        onSave={() => {}}
       />
     </div>
   );
