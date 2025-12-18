@@ -1,0 +1,5 @@
+{
+  "name": "Lumina Lyrics - Trình Phát Nhạc Đồng Bộ",
+  "description": "Một ứng dụng nghe nhạc hiện đại cho phép tải nhạc cá nhân và tự động đồng bộ lời bài hát sử dụng công nghệ Gemini AI.",
+  "requestFramePermissions": []
+}
