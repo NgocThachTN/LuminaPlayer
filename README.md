@@ -1,7 +1,14 @@
 # LuminaPlayer
 
 Minimalist music player with synchronized lyrics display.
+
+Website:
+
 <img width="1919" height="1074" alt="image" src="https://github.com/user-attachments/assets/ff89a08c-5977-42b9-a665-b90899b14552" />
+
+Windows App:
+
+<img width="1919" height="1021" alt="image" src="https://github.com/user-attachments/assets/11d14f4a-c48a-44f4-b6cd-95edf08498e8" />
 
 ## Features
 
