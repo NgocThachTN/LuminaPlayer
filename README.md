@@ -8,14 +8,13 @@ Website:
 
 Windows App:
 
-<img width="1919" height="1021" alt="image" src="https://github.com/user-attachments/assets/11d14f4a-c48a-44f4-b6cd-95edf08498e8" />
+<img width="1918" height="1017" alt="image" src="https://github.com/user-attachments/assets/dc895d25-750f-491c-8c83-b1dac2643b26" />
+
 
 ## Features
-
-
 - Import audio files or folders
 - Auto-fetch synced lyrics from lrclib.net
-- Gemini AI fallback for lyrics generation
+- Gemini AI fallback for lyrics generation (option)
 - Real-time audio visualizer
 - Playlist management
 
