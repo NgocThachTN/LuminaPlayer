@@ -211,6 +211,10 @@ ipcMain.handle("get-file-info", async (event, filePath) => {
   try {
     const name = path.basename(filePath);
     const nameWithoutExt = name.replace(/\.[^/.]+$/, "");
+    
+    // Get file size
+    const stats = fs.statSync(filePath);
+    const size = stats.size;
 
     // Try to parse artist - title format
     let title = nameWithoutExt;
@@ -230,12 +234,13 @@ ipcMain.handle("get-file-info", async (event, filePath) => {
       }
     }
 
-    return { title, artist, name };
+    return { title, artist, name, size };
   } catch (e) {
     return {
       title: path.basename(filePath).replace(/\.[^/.]+$/, ""),
       artist: "Unknown Artist",
       name: path.basename(filePath),
+      size: null,
     };
   }
 });

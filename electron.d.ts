@@ -26,7 +26,7 @@ interface ElectronAPI {
   openFileDialog: () => Promise<string[]>;
   
   // Metadata
-  getFileInfo: (filePath: string) => Promise<{ title: string; artist: string; name: string }>;
+  getFileInfo: (filePath: string) => Promise<{ title: string; artist: string; name: string; size?: number }>;
   extractMetadata: (filePath: string) => Promise<{ title: string; artist: string; album: string; cover?: string }>;
   
   isElectron: boolean;

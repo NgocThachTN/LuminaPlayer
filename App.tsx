@@ -35,6 +35,13 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [showPlaylist, setShowPlaylist] = useState(false);
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
+  const [audioInfo, setAudioInfo] = useState<{
+    format: string;
+    bitrate: number | null;
+  }>({
+    format: "",
+    bitrate: null,
+  });
   const audioRef = useRef<HTMLAudioElement>(null);
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
   const playlistContainerRef = useRef<HTMLDivElement>(null);
@@ -211,6 +218,24 @@ const App: React.FC = () => {
     await playSongFromItem(items[0], 0);
   };
 
+  // Get audio format from filename
+  const getAudioFormat = (filename: string): string => {
+    const ext = filename.split(".").pop()?.toLowerCase() || "";
+    const formatMap: { [key: string]: string } = {
+      flac: "FLAC",
+      mp3: "MP3",
+      wav: "WAV",
+      aac: "AAC",
+      m4a: "M4A",
+      ogg: "OGG",
+      wma: "WMA",
+      aiff: "AIFF",
+      alac: "ALAC",
+      opus: "OPUS",
+    };
+    return formatMap[ext] || ext.toUpperCase();
+  };
+
   // Play from playlist item (supports both File and path)
   const playSongFromItem = async (item: PlaylistItem, index: number) => {
     setActiveLyricIndex(-1);
@@ -220,14 +245,20 @@ const App: React.FC = () => {
       lyricsContainerRef.current.scrollTop = 0;
     }
 
+    // Get format from filename
+    const format = getAudioFormat(item.name);
+    setAudioInfo({ format, bitrate: null });
+
     let url = "";
     let file: File | null = null;
+    let fileSize: number | null = null;
     let metadataTitle = item.name.replace(/\.[^/.]+$/, "");
     let metadataArtist = "Unknown Artist";
 
     // If we have a File object, use it
     if (item.file) {
       file = item.file;
+      fileSize = file.size;
       url = URL.createObjectURL(file);
     }
     // If we only have path (Electron), use file:// protocol directly - MUCH faster!
@@ -240,8 +271,20 @@ const App: React.FC = () => {
         const info = await window.electronAPI.getFileInfo(item.path);
         metadataTitle = info.title;
         metadataArtist = info.artist;
+        fileSize = info.size || null;
       }
     }
+
+    // Calculate bitrate when audio is loaded
+    const calculateBitrate = (duration: number) => {
+      if (fileSize && duration > 0) {
+        const bitrate = Math.round((fileSize * 8) / duration / 1000);
+        setAudioInfo((prev) => ({ ...prev, bitrate }));
+      }
+    };
+
+    // Store calculateBitrate for use in onLoadedMetadata
+    (window as any).__calculateBitrate = calculateBitrate;
 
     if (!url) {
       console.error("Could not load audio file");
@@ -855,7 +898,15 @@ const App: React.FC = () => {
               </span>
               <span className="text-white/20">tracks</span>
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
+              {audioInfo.format && (
+                <span className="text-amber-400/80 font-semibold">
+                  {audioInfo.format}
+                </span>
+              )}
+              {audioInfo.bitrate && (
+                <span className="text-white/40">{audioInfo.bitrate} kbps</span>
+              )}
               {state.lyrics.isSynced && (
                 <span className="flex items-center gap-1.5 text-emerald-400">
                   <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse"></span>
@@ -901,12 +952,17 @@ const App: React.FC = () => {
             currentTime: audioRef.current?.currentTime || 0,
           }))
         }
-        onLoadedMetadata={() =>
+        onLoadedMetadata={() => {
+          const duration = audioRef.current?.duration || 0;
           setState((prev) => ({
             ...prev,
-            duration: audioRef.current?.duration || 0,
-          }))
-        }
+            duration,
+          }));
+          // Calculate bitrate
+          if ((window as any).__calculateBitrate) {
+            (window as any).__calculateBitrate(duration);
+          }
+        }}
         onEnded={playNext}
       />
 
