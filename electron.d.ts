@@ -29,7 +29,19 @@ interface ElectronAPI {
   getFileInfo: (filePath: string) => Promise<{ title: string; artist: string; name: string; size?: number }>;
   extractMetadata: (filePath: string) => Promise<{ title: string; artist: string; album: string; cover?: string }>;
   
+  // Discord Rich Presence
+  updateDiscordPresence: (data: DiscordPresenceData) => Promise<boolean>;
+  clearDiscordPresence: () => Promise<boolean>;
+  
   isElectron: boolean;
+}
+
+interface DiscordPresenceData {
+  title?: string;
+  artist?: string;
+  isPlaying: boolean;
+  currentTime?: number;
+  duration?: number;
 }
 
 declare global {

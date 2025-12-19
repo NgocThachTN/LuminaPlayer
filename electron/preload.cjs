@@ -25,5 +25,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getFileInfo: (filePath) => ipcRenderer.invoke('get-file-info', filePath),
   extractMetadata: (filePath) => ipcRenderer.invoke('extract-metadata', filePath),
   
+  // Discord Rich Presence
+  updateDiscordPresence: (data) => ipcRenderer.invoke('update-discord-presence', data),
+  clearDiscordPresence: () => ipcRenderer.invoke('clear-discord-presence'),
+  
   isElectron: true
 });

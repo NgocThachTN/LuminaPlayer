@@ -2,6 +2,106 @@ const { app, BrowserWindow, ipcMain, dialog, shell } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const jsmediatags = require("jsmediatags");
+const DiscordRPC = require("discord-rpc");
+
+// Discord Rich Presence Configuration
+// Create your app at: https://discord.com/developers/applications
+const DISCORD_CLIENT_ID = "1451554863283703989"; // Replace with your Discord Application ID
+let rpc = null;
+let rpcReady = false;
+
+// Initialize Discord RPC
+function initDiscordRPC() {
+  try {
+    DiscordRPC.register(DISCORD_CLIENT_ID);
+    rpc = new DiscordRPC.Client({ transport: "ipc" });
+
+    rpc.on("ready", () => {
+      console.log("Discord RPC Connected!");
+      rpcReady = true;
+
+      // Set initial presence
+      rpc.setActivity({
+        details: "Idle",
+        state: "Not playing anything",
+        largeImageKey: "lumina_icon",
+        largeImageText: "Lumina Music Player",
+        instance: false,
+      });
+    });
+
+    rpc.on("disconnected", () => {
+      console.log("Discord RPC Disconnected");
+      rpcReady = false;
+    });
+
+    rpc.login({ clientId: DISCORD_CLIENT_ID }).catch((err) => {
+      console.error("Failed to connect to Discord:", err.message);
+      rpcReady = false;
+    });
+  } catch (err) {
+    console.error("Discord RPC initialization error:", err);
+  }
+}
+
+// Format seconds to m:ss
+function formatTime(seconds) {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, "0")}`;
+}
+
+// Format progress as time only (clean look)
+function createProgressBar(current, total) {
+  return ""; // No text progress bar - just use time
+}
+
+// Update Discord Rich Presence (Spotify-like style)
+function updateDiscordPresence(data) {
+  if (!rpc || !rpcReady) return;
+
+  try {
+    const artist = data.artist || "Unknown Artist";
+    const title = data.title || "Unknown Track";
+    const currentTime = data.currentTime || 0;
+    const duration = data.duration || 0;
+
+    if (data.isPlaying) {
+      rpc.setActivity({
+        details: title,
+        state: `by ${artist} • Playing`,
+        largeImageKey: "lumina_icon",
+        largeImageText: "Lumina Music Player",
+        smallImageKey: "playing",
+        smallImageText: "Playing",
+        instance: false,
+      });
+    } else {
+      rpc.setActivity({
+        details: title,
+        state: `by ${artist} • Paused`,
+        largeImageKey: "lumina_icon",
+        largeImageText: "Lumina Music Player",
+        smallImageKey: "paused",
+        smallImageText: "Paused",
+        instance: false,
+      });
+    }
+  } catch (err) {
+    console.error("Error updating Discord presence:", err);
+  }
+}
+
+// Clear Discord Rich Presence
+function clearDiscordPresence() {
+  if (rpc && rpcReady) {
+    try {
+      rpc.clearActivity();
+    } catch (err) {
+      console.error("Error clearing Discord presence:", err);
+    }
+  }
+}
 
 // Store for config (API key + playlist)
 const configPath = path.join(app.getPath("userData"), "config.json");
@@ -56,9 +156,16 @@ function createWindow() {
   });
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  createWindow();
+  initDiscordRPC();
+});
 
 app.on("window-all-closed", () => {
+  clearDiscordPresence();
+  if (rpc) {
+    rpc.destroy();
+  }
   if (process.platform !== "darwin") {
     app.quit();
   }
@@ -68,6 +175,17 @@ app.on("activate", () => {
   if (mainWindow === null) {
     createWindow();
   }
+});
+
+// IPC handler for Discord Rich Presence
+ipcMain.handle("update-discord-presence", (event, data) => {
+  updateDiscordPresence(data);
+  return true;
+});
+
+ipcMain.handle("clear-discord-presence", () => {
+  clearDiscordPresence();
+  return true;
 });
 
 // IPC handlers for API key management

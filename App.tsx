@@ -440,6 +440,29 @@ const App: React.FC = () => {
     }
   }, [state.url, state.isPlaying]);
 
+  // Update Discord Rich Presence - only when song/state changes
+  useEffect(() => {
+    if (!isElectron || !window.electronAPI?.updateDiscordPresence) return;
+
+    const audio = audioRef.current;
+    window.electronAPI.updateDiscordPresence({
+      title: state.metadata.title,
+      artist: state.metadata.artist,
+      isPlaying: state.isPlaying,
+      currentTime: audio?.currentTime || 0,
+      duration: audio?.duration || state.duration,
+    });
+  }, [state.metadata.title, state.metadata.artist, state.isPlaying, state.currentSongIndex]);
+
+  // Clear Discord presence on unmount
+  useEffect(() => {
+    return () => {
+      if (isElectron && window.electronAPI?.clearDiscordPresence) {
+        window.electronAPI.clearDiscordPresence();
+      }
+    };
+  }, []);
+
   // Optimized lyric tracking with debounced scroll (only for synced lyrics)
   useEffect(() => {
     if (!state.lyrics.isSynced || state.lyrics.synced.length === 0) return;
