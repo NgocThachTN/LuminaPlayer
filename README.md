@@ -4,11 +4,13 @@ Minimalist music player with synchronized lyrics display.
 
 Website:
 
-<img width="1919" height="1074" alt="image" src="https://github.com/user-attachments/assets/ff89a08c-5977-42b9-a665-b90899b14552" />
+<img width="1919" height="914" alt="image" src="https://github.com/user-attachments/assets/69d9e5f0-7358-4224-97d4-be31ef92355e" />
+
 
 Windows App:
 
-<img width="1918" height="1017" alt="image" src="https://github.com/user-attachments/assets/dc895d25-750f-491c-8c83-b1dac2643b26" />
+<img width="1919" height="1019" alt="image" src="https://github.com/user-attachments/assets/aca6bbd8-636d-4819-94a2-4cf73d3043a5" />
+
 
 ## Features
 
