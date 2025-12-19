@@ -37,9 +37,32 @@ const App: React.FC = () => {
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
+  const playlistContainerRef = useRef<HTMLDivElement>(null);
   const [activeLyricIndex, setActiveLyricIndex] = useState(-1);
   const lastScrollTimeRef = useRef(0);
   const scrollTimeoutRef = useRef<number | null>(null);
+
+  // Open playlist
+  const openPlaylist = () => {
+    setShowPlaylist(true);
+  };
+
+  // Scroll to current song when playlist opens
+  useEffect(() => {
+    if (
+      showPlaylist &&
+      playlistContainerRef.current &&
+      state.currentSongIndex >= 0
+    ) {
+      const currentItem = playlistContainerRef.current.children[
+        state.currentSongIndex
+      ] as HTMLElement;
+      if (currentItem) {
+        // Use instant scroll, not smooth - to show immediately
+        currentItem.scrollIntoView({ behavior: "instant", block: "center" });
+      }
+    }
+  }, [showPlaylist]);
 
   // Load saved playlist on startup (Electron only)
   useEffect(() => {
@@ -211,7 +234,7 @@ const App: React.FC = () => {
     else if (item.path && isElectron) {
       // Use file:// protocol directly for instant playback
       url = `file://${item.path.replace(/\\/g, "/")}`;
-      
+
       // Get basic metadata from filename
       if (window.electronAPI) {
         const info = await window.electronAPI.getFileInfo(item.path);
@@ -230,10 +253,10 @@ const App: React.FC = () => {
       ...prev,
       file,
       url,
-      metadata: { 
-        title: metadataTitle, 
+      metadata: {
+        title: metadataTitle,
         artist: metadataArtist,
-        cover: prev.metadata.cover // Keep old cover until new one loads
+        cover: prev.metadata.cover, // Keep old cover until new one loads
       },
       lyrics: emptyLyrics,
       isPlaying: true,
@@ -248,11 +271,15 @@ const App: React.FC = () => {
 
     // Load full metadata in background (FAST - only reads metadata, not entire file)
     setIsLoading(true);
-    
+
     const loadMetadataAndLyrics = async () => {
       let finalTitle = metadataTitle;
       let finalArtist = metadataArtist;
-      let finalMetadata = { title: metadataTitle, artist: metadataArtist, cover: undefined as string | undefined };
+      let finalMetadata = {
+        title: metadataTitle,
+        artist: metadataArtist,
+        cover: undefined as string | undefined,
+      };
 
       // Extract metadata - use Electron IPC for path, or browser API for File
       try {
@@ -432,12 +459,21 @@ const App: React.FC = () => {
     state.lyrics.synced.length > 0 || state.lyrics.plain.length > 0;
 
   return (
-    <div className="h-screen w-full flex flex-col bg-black text-white overflow-hidden">
+    <div className="h-screen w-full flex flex-col bg-black text-white overflow-hidden app-bg">
       {/* Top Border Navigation */}
-      <header className="w-full flex justify-between items-center border-b border-white/10 px-6 py-4 z-50">
-        <div className="flex items-center gap-4">
-          <span className="font-black text-2xl tracking-[0.1em]">
-            Lumina Music Player
+      <header className="glass-header w-full flex justify-between items-center border-b border-white/10 px-6 py-3 z-50">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-white/20 to-white/5 flex items-center justify-center">
+            <svg
+              className="w-4 h-4 text-white"
+              fill="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
+            </svg>
+          </div>
+          <span className="font-semibold text-sm tracking-wide text-white/80 hidden sm:inline">
+            Lumina
           </span>
         </div>
 
@@ -453,7 +489,7 @@ const App: React.FC = () => {
             Lyrics
           </button>
           <button
-            onClick={() => setShowPlaylist(true)}
+            onClick={openPlaylist}
             className={`square-btn px-6 py-2 text-xs font-bold uppercase tracking-widest cursor-pointer border-l border-white/10 ${
               showPlaylist
                 ? "bg-white text-black"
@@ -515,36 +551,56 @@ const App: React.FC = () => {
       {/* Grid Content Area */}
       <main className="flex-1 w-full flex flex-col md:flex-row overflow-hidden">
         {/* Left Section: Information Grid */}
-        <div className="w-full md:w-[40%] flex flex-col border-r border-white/10">
-          <div className="aspect-square w-full bg-neutral-900 border-b border-white/10 overflow-hidden">
-            {state.metadata.cover && (
-              <img
-                src={state.metadata.cover}
-                className="w-full h-full object-cover transition-opacity duration-300"
-                alt="Cover Art"
-              />
-            )}
+        <div className="w-full md:w-[40%] flex flex-col border-r border-white/10 overflow-y-auto hide-scrollbar">
+          {/* Album Cover Container - Fixed aspect ratio */}
+          <div className="w-full p-8 flex items-center justify-center">
+            <div className="album-cover-container relative">
+              {/* Vinyl record effect */}
+              <div
+                className={`vinyl-record ${
+                  state.isPlaying ? "vinyl-spinning" : ""
+                }`}
+              ></div>
+
+              {/* Album cover */}
+              <div className="album-cover aspect-square w-full max-w-[320px] bg-neutral-900 rounded-md overflow-hidden flex items-center justify-center">
+                {state.metadata.cover ? (
+                  <img
+                    src={state.metadata.cover}
+                    className="w-full h-full object-contain"
+                    alt="Cover Art"
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-neutral-800 to-neutral-900">
+                    <svg
+                      className="w-16 h-16 text-white/10"
+                      fill="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
+                    </svg>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
 
-          <div className="p-8 flex-1 flex flex-col justify-between">
-            <div>
-              <p className="text-xs font-bold text-white/40 mb-2 uppercase tracking-[0.3em]">
-                Currently Playing
-              </p>
-              <h2 className="text-4xl font-bold mb-4 leading-tight tracking-tight">
-                {state.metadata.title}
-              </h2>
-              <p className="text-white/40 text-sm font-medium uppercase tracking-[0.2em]">
-                {state.metadata.artist}
-              </p>
-            </div>
+          {/* Song Info - Centered below cover */}
+          <div className="px-6 pb-4 text-center">
+            <h2 className="text-2xl md:text-3xl font-bold mb-2 leading-tight tracking-tight line-clamp-2">
+              {state.metadata.title}
+            </h2>
+            <p className="text-white/50 text-sm font-medium uppercase tracking-[0.15em]">
+              {state.metadata.artist}
+            </p>
+          </div>
 
-            <div className="mt-8">
-              <Visualizer
-                audioElement={audioRef.current}
-                isPlaying={state.isPlaying}
-              />
-            </div>
+          {/* Visualizer */}
+          <div className="px-6 pb-6 mt-auto">
+            <Visualizer
+              audioElement={audioRef.current}
+              isPlaying={state.isPlaying}
+            />
           </div>
         </div>
 
@@ -558,7 +614,7 @@ const App: React.FC = () => {
                 </h3>
               </div>
               <div className="flex-1 w-full overflow-y-auto lyrics-scroll p-8 md:px-16">
-                <div className="flex flex-col gap-2">
+                <div ref={playlistContainerRef} className="flex flex-col gap-2">
                   {(playlistItems.length > 0
                     ? playlistItems
                     : state.playlist.map((f) => ({ file: f, name: f.name }))
@@ -566,38 +622,50 @@ const App: React.FC = () => {
                     <div
                       key={idx}
                       onClick={() => handleSongSelect(idx)}
-                      className={`p-4 border border-white/10 cursor-pointer hover:bg-white/5 transition-colors flex items-center gap-4 ${
-                        idx === state.currentSongIndex
-                          ? "bg-white/10 border-white/30"
-                          : ""
+                      className={`playlist-item p-4 rounded-lg cursor-pointer flex items-center gap-4 ${
+                        idx === state.currentSongIndex ? "active" : ""
                       }`}
                     >
-                      <span className="text-xs font-mono text-white/40 w-6">
+                      <span className="text-xs font-mono text-white/30 w-6">
                         {String(idx + 1).padStart(2, "0")}
                       </span>
-                      <span className="text-sm font-medium tracking-wider truncate flex-1">
+                      <span className="text-sm font-medium tracking-wide truncate flex-1">
                         {item.name.replace(/\.[^/.]+$/, "")}
                       </span>
                       {idx === state.currentSongIndex && (
-                        <span className="text-[10px] uppercase tracking-widest text-white/60 animate-pulse">
-                          Playing
-                        </span>
+                        <div className="playing-indicator">
+                          <span></span>
+                          <span></span>
+                          <span></span>
+                        </div>
                       )}
                     </div>
                   ))}
                   {playlistItems.length === 0 &&
                     state.playlist.length === 0 && (
-                      <div className="text-white/20 text-sm uppercase tracking-widest text-center py-10">
-                        No tracks in playlist
+                      <div className="flex flex-col items-center justify-center py-16 gap-4">
+                        <svg
+                          className="w-16 h-16 text-white/10"
+                          fill="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
+                        </svg>
+                        <p className="text-white/20 text-sm uppercase tracking-widest">
+                          No tracks in playlist
+                        </p>
+                        <p className="text-white/10 text-xs">
+                          Import a folder or track to get started
+                        </p>
                       </div>
                     )}
                 </div>
               </div>
             </div>
           ) : isLoading ? (
-            <div className="h-full w-full flex flex-col items-center justify-center gap-4">
-              <div className="w-8 h-8 border border-white/10 border-t-white animate-spin"></div>
-              <p className="text-[10px] uppercase tracking-[0.5em] text-white/30">
+            <div className="h-full w-full flex flex-col items-center justify-center gap-6">
+              <div className="loading-spinner"></div>
+              <p className="text-xs uppercase tracking-[0.3em] text-white/40 font-medium">
                 Loading Lyrics
               </p>
             </div>
@@ -605,11 +673,15 @@ const App: React.FC = () => {
             // Synced Lyrics View
             <div
               ref={lyricsContainerRef}
-              className="h-full w-full overflow-y-auto lyrics-scroll py-[30vh] px-8 md:px-16"
+              className="h-full w-full overflow-y-auto lyrics-scroll py-[35vh] px-6 md:px-12"
             >
               {state.lyrics.synced.map((line, idx) => {
-                const distance = Math.abs(idx - activeLyricIndex);
-                const isNear = distance > 0 && distance <= 2;
+                const distance = idx - activeLyricIndex;
+                const absDistance = Math.abs(distance);
+                const isActive = idx === activeLyricIndex;
+                const isNear1 = absDistance === 1;
+                const isNear2 = absDistance === 2;
+                const isUpcoming = distance > 0 && distance <= 4;
 
                 return (
                   <div
@@ -618,11 +690,13 @@ const App: React.FC = () => {
                       audioRef.current &&
                       (audioRef.current.currentTime = line.time)
                     }
-                    className={`lyric-item text-xl md:text-2xl font-normal tracking-wide cursor-pointer ${
-                      idx === activeLyricIndex ? "active-lyric" : ""
-                    } ${isNear ? "near-active" : ""}`}
+                    className={`lyric-item text-lg md:text-2xl cursor-pointer select-none ${
+                      isActive ? "active-lyric" : ""
+                    } ${isNear1 ? "near-active near-active-1" : ""} ${
+                      isNear2 ? "near-active near-active-2" : ""
+                    } ${isUpcoming && !isNear1 && !isNear2 ? "upcoming" : ""}`}
                   >
-                    {line.text.toUpperCase()}
+                    {line.text || "♪"}
                   </div>
                 );
               })}
@@ -631,39 +705,46 @@ const App: React.FC = () => {
             // Plain Lyrics View
             <div
               ref={lyricsContainerRef}
-              className="h-full w-full overflow-y-auto lyrics-scroll py-8 px-8 md:px-16"
+              className="h-full w-full overflow-y-auto lyrics-scroll py-10 px-6 md:px-12"
             >
-              <div className="flex flex-col gap-3">
+              <div className="flex flex-col">
                 {state.lyrics.plain.map((line, idx) => (
                   <div
                     key={idx}
-                    className="text-lg md:text-xl font-normal tracking-wide text-white/80 leading-relaxed"
+                    className="plain-lyric text-base md:text-lg tracking-wide"
                   >
-                    {line}
+                    {line || <span className="text-white/20">♪</span>}
                   </div>
                 ))}
               </div>
             </div>
           ) : (
             // No Lyrics
-            <div className="h-full flex items-center justify-center text-white/10 text-xs uppercase tracking-[0.5em]">
-              {state.file
-                ? "No Lyrics Found"
-                : "System Idle - Waiting for Input"}
+            <div className="h-full flex flex-col items-center justify-center gap-4">
+              <svg
+                className="w-12 h-12 text-white/10"
+                fill="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z" />
+              </svg>
+              <p className="text-white/20 text-xs uppercase tracking-[0.3em]">
+                {state.file ? "No Lyrics Found" : "Select a Track"}
+              </p>
             </div>
           )}
-          {/* Minimal Fade Overlays */}
+          {/* Enhanced Fade Overlays */}
           {!showPlaylist && hasLyrics && (
             <>
               <div
                 className={`absolute top-0 left-0 w-full ${
-                  state.lyrics.isSynced ? "h-32" : "h-16"
-                } bg-gradient-to-b from-black to-transparent pointer-events-none`}
+                  state.lyrics.isSynced ? "h-40" : "h-20"
+                } lyrics-fade-top pointer-events-none z-10`}
               ></div>
               <div
                 className={`absolute bottom-0 left-0 w-full ${
-                  state.lyrics.isSynced ? "h-32" : "h-16"
-                } bg-gradient-to-t from-black to-transparent pointer-events-none`}
+                  state.lyrics.isSynced ? "h-40" : "h-20"
+                } lyrics-fade-bottom pointer-events-none z-10`}
               ></div>
             </>
           )}
@@ -673,13 +754,13 @@ const App: React.FC = () => {
       {/* Control Strip */}
       <footer className="w-full border-t border-white/10 flex flex-col">
         {/* Progress Bar - Optimized */}
-        <div className="w-full px-4 py-3 flex items-center gap-3">
-          <span className="text-[10px] font-mono text-white/40 w-10 text-right">
+        <div className="w-full px-6 py-4 flex items-center gap-4">
+          <span className="text-[11px] font-mono text-white/50 w-10 text-right tabular-nums">
             {formatTime(state.currentTime)}
           </span>
-          <div className="flex-1 h-1 bg-white/10 relative group cursor-pointer rounded-full">
+          <div className="progress-bar flex-1 h-1 bg-white/10 relative group cursor-pointer rounded-full">
             <div
-              className="absolute top-0 left-0 h-full bg-white rounded-full transition-all duration-75 ease-linear"
+              className="progress-bar-fill absolute top-0 left-0 h-full rounded-full transition-all duration-75 ease-linear"
               style={{
                 width: `${(state.currentTime / state.duration) * 100 || 0}%`,
               }}
@@ -705,7 +786,7 @@ const App: React.FC = () => {
               className="absolute top-1/2 -translate-y-1/2 left-0 w-full h-4 opacity-0 cursor-pointer z-10"
             />
           </div>
-          <span className="text-[10px] font-mono text-white/40 w-10">
+          <span className="text-[11px] font-mono text-white/50 w-10 tabular-nums">
             {formatTime(state.duration)}
           </span>
         </div>
@@ -728,20 +809,20 @@ const App: React.FC = () => {
             {/* Play/Pause Button */}
             <button
               onClick={togglePlay}
-              className="square-btn w-12 h-12 flex items-center justify-center"
+              className="play-btn w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300"
             >
               {state.isPlaying ? (
                 <svg
-                  className="w-6 h-6"
+                  className="w-5 h-5"
                   fill="currentColor"
                   viewBox="0 0 24 24"
                 >
-                  <rect x="6" y="4" width="4" height="16" />
-                  <rect x="14" y="4" width="4" height="16" />
+                  <rect x="6" y="4" width="4" height="16" rx="1" />
+                  <rect x="14" y="4" width="4" height="16" rx="1" />
                 </svg>
               ) : (
                 <svg
-                  className="w-6 h-6"
+                  className="w-5 h-5 ml-0.5"
                   fill="currentColor"
                   viewBox="0 0 24 24"
                 >
@@ -763,19 +844,27 @@ const App: React.FC = () => {
             </button>
           </div>
 
-          <div className="px-6 flex-1 flex items-center justify-between text-[10px] font-mono tracking-widest text-white/40 uppercase">
-            <div>
-              {(playlistItems.length || state.playlist.length) > 0
-                ? `${state.currentSongIndex + 1} / ${
-                    playlistItems.length || state.playlist.length
-                  }`
-                : "NO TRACKS"}
+          <div className="px-6 flex-1 flex items-center justify-between text-[11px] font-medium tracking-wider text-white/40 uppercase">
+            <div className="flex items-center gap-2">
+              <span className="text-white/60 tabular-nums">
+                {(playlistItems.length || state.playlist.length) > 0
+                  ? `${state.currentSongIndex + 1} / ${
+                      playlistItems.length || state.playlist.length
+                    }`
+                  : "—"}
+              </span>
+              <span className="text-white/20">tracks</span>
             </div>
             <div className="flex items-center gap-4">
               {state.lyrics.isSynced && (
-                <span className="text-green-400">SYNCED</span>
+                <span className="flex items-center gap-1.5 text-emerald-400">
+                  <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse"></span>
+                  Synced
+                </span>
               )}
-              <span>STATUS: {state.isPlaying ? "PLAYING" : "PAUSED"}</span>
+              <span className="hidden sm:inline text-white/30">
+                {state.isPlaying ? "Now Playing" : "Paused"}
+              </span>
             </div>
           </div>
 
