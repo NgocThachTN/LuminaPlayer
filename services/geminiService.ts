@@ -58,7 +58,7 @@ const fetchLrcLibLyrics = async (
       return extractLyrics(bestMatch);
     }
 
-    // Method 2: Search with q parameter
+    // Method 2: Search with q parameter (artist + title)
     response = await fetch(
       `https://lrclib.net/api/search?q=${encodeURIComponent(
         `${artist} ${title}`
@@ -73,6 +73,22 @@ const fetchLrcLibLyrics = async (
     if (bestMatch) {
       console.log(
         `[lrclib] Found: "${bestMatch.trackName}" by "${bestMatch.artistName}"`
+      );
+      return extractLyrics(bestMatch);
+    }
+
+    // Method 3: Search with title only (useful for CJK songs where artist may not match)
+    response = await fetch(
+      `https://lrclib.net/api/search?q=${encodeURIComponent(title)}`
+    );
+    results = response.ok ? await response.json() : [];
+    console.log(`[lrclib] Method 3 (q=title only): ${results.length} results`);
+
+    // For title-only search, use relaxed matching (accept first result with matching title)
+    bestMatch = findBestMatchRelaxed(results, title);
+    if (bestMatch) {
+      console.log(
+        `[lrclib] Found (relaxed): "${bestMatch.trackName}" by "${bestMatch.artistName}"`
       );
       return extractLyrics(bestMatch);
     }
@@ -99,6 +115,13 @@ const extractLyrics = (result: any): LyricsResult => {
   };
 };
 
+// Normalize string for comparison (supports CJK characters)
+const normalizeStr = (str: string) =>
+  str
+    .toLowerCase()
+    .replace(/[^\w\s\u3000-\u9fff\uac00-\ud7af\u0080-\u024F]/g, "")
+    .trim();
+
 // Find best matching result - prioritize those with synced lyrics
 const findBestMatch = (
   results: any[],
@@ -107,11 +130,6 @@ const findBestMatch = (
 ): any | null => {
   if (!results || results.length === 0) return null;
 
-  const normalizeStr = (str: string) =>
-    str
-      .toLowerCase()
-      .replace(/[^\w\s\u3000-\u9fff\uac00-\ud7af]/g, "")
-      .trim();
   const normalizedTitle = normalizeStr(title);
   const normalizedArtist = normalizeStr(artist);
 
@@ -156,6 +174,46 @@ const findBestMatch = (
 
   // Return best match only if it has a decent score (at least partial artist match)
   if (scored.length > 0 && scored[0].score >= 50) {
+    return scored[0].result;
+  }
+
+  return null;
+};
+
+// Relaxed matching - only requires title match (for CJK songs where artist may differ)
+const findBestMatchRelaxed = (results: any[], title: string): any | null => {
+  if (!results || results.length === 0) return null;
+
+  const normalizedTitle = normalizeStr(title);
+
+  // Score each result - only care about title matching
+  const scored = results
+    .filter((r: any) => r.plainLyrics || r.syncedLyrics) // Must have lyrics
+    .map((r: any) => {
+      const rTitle = normalizeStr(r.trackName || "");
+
+      let score = 0;
+
+      // Bonus for having synced lyrics
+      if (r.syncedLyrics) {
+        score += 30;
+      }
+
+      // Title match - this is the only requirement
+      if (rTitle === normalizedTitle) {
+        score += 100;
+      } else if (rTitle.includes(normalizedTitle)) {
+        score += 60;
+      } else if (normalizedTitle.includes(rTitle)) {
+        score += 40;
+      }
+
+      return { result: r, score };
+    })
+    .filter((item) => item.score >= 40) // Must have at least partial title match
+    .sort((a, b) => b.score - a.score);
+
+  if (scored.length > 0) {
     return scored[0].result;
   }
 

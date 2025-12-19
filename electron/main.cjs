@@ -211,7 +211,7 @@ ipcMain.handle("get-file-info", async (event, filePath) => {
   try {
     const name = path.basename(filePath);
     const nameWithoutExt = name.replace(/\.[^/.]+$/, "");
-    
+
     // Get file size
     const stats = fs.statSync(filePath);
     const size = stats.size;
