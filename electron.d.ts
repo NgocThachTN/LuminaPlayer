@@ -34,6 +34,8 @@ interface ElectronAPI {
   clearDiscordPresence: () => Promise<boolean>;
   
   isElectron: boolean;
+  checkLdacAvailability: () => Promise<boolean>;
+  getLdacBitrate: () => Promise<number>;
 }
 
 interface DiscordPresenceData {

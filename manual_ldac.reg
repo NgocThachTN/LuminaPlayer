@@ -1,0 +1,13 @@
+Windows Registry Editor Version 5.00
+
+; LUMINA PLAYER LDAC MANUAL HACK
+; Run this file to manually inject the keys if the Installer fails.
+
+[HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\BthA2dp\Parameters]
+"UseAltCodecs"=dword:00000001
+"BluetoothAacEnable"=dword:00000001
+
+; LDAC Fake Injection (ID 00AA, Bitrate 990kbps -> 0x3DE)
+[HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\BthA2dp\Parameters\Codecs\00AA]
+"CodecEnabled"=dword:00000001
+"Bitrate"=dword:000003de

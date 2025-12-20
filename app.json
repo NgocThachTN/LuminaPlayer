@@ -1,0 +1,10 @@
+{
+  "android": {
+    "package": "com.ngocthach.luminamusicplayer"
+  },
+  "extra": {
+    "eas": {
+      "projectId": "c628abe3-c782-4ab5-a960-519c9338779b"
+    }
+  }
+}
