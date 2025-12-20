@@ -12,7 +12,7 @@ dist
 dist-ssr
 release
 *.local
-
+mobile-app
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
