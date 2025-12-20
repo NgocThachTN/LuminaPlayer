@@ -1,20 +1,43 @@
-import React, { useState, useRef, useEffect } from "react";
-import { SongState, LyricsResult } from "./types";
+import React, {
+  useState,
+  useRef,
+  useEffect,
+  useMemo,
+  useTransition,
+} from "react";
+import {
+  SongState,
+  LyricsResult,
+  AlbumInfo,
+  ArtistInfo,
+  PlaylistItemMetadata,
+} from "./types";
 import { getLyrics } from "./services/geminiService";
 import { extractMetadata } from "./services/metadataService";
 import { Visualizer } from "./components/Visualizer";
 import { ApiKeyModal } from "./components/ApiKeyModal";
+import { LazyImage } from "./components/LazyImage";
 
 const emptyLyrics: LyricsResult = { synced: [], plain: [], isSynced: false };
 
 // Helper to check if running in Electron
 const isElectron = !!window.electronAPI;
 
+// View mode types
+type ViewMode =
+  | "lyrics"
+  | "playlist"
+  | "albums"
+  | "artists"
+  | "album-detail"
+  | "artist-detail";
+
 // Playlist item can be File (web) or path string (Electron saved)
 interface PlaylistItem {
   file?: File;
   path?: string;
   name: string;
+  metadata?: PlaylistItemMetadata;
 }
 
 const App: React.FC = () => {
@@ -33,8 +56,22 @@ const App: React.FC = () => {
   // Extended playlist with paths for Electron persistence
   const [playlistItems, setPlaylistItems] = useState<PlaylistItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [showPlaylist, setShowPlaylist] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>("lyrics");
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
+  const [selectedAlbum, setSelectedAlbum] = useState<string | null>(null);
+  const [selectedArtist, setSelectedArtist] = useState<string | null>(null);
+  const [metadataLoaded, setMetadataLoaded] = useState(false);
+  const [isPending, startTransition] = useTransition();
+  const [isViewReady, setIsViewReady] = useState(true);
+  const [deferredViewMode, setDeferredViewMode] = useState<ViewMode>("lyrics");
+
+  // Sync deferred view mode with actual view mode (with slight delay for smooth transition)
+  useEffect(() => {
+    if (viewMode !== deferredViewMode) {
+      const timer = setTimeout(() => setDeferredViewMode(viewMode), 10);
+      return () => clearTimeout(timer);
+    }
+  }, [viewMode, deferredViewMode]);
   const [audioInfo, setAudioInfo] = useState<{
     format: string;
     bitrate: number | null;
@@ -45,31 +82,293 @@ const App: React.FC = () => {
   const audioRef = useRef<HTMLAudioElement>(null);
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
   const playlistContainerRef = useRef<HTMLDivElement>(null);
+  const albumsContainerRef = useRef<HTMLDivElement>(null);
+  const artistsContainerRef = useRef<HTMLDivElement>(null);
+  const albumDetailContainerRef = useRef<HTMLDivElement>(null);
+  const artistDetailContainerRef = useRef<HTMLDivElement>(null);
   const [activeLyricIndex, setActiveLyricIndex] = useState(-1);
   const lastScrollTimeRef = useRef(0);
   const scrollTimeoutRef = useRef<number | null>(null);
 
+  // Get current song's album key
+  const currentSongAlbumKey = useMemo(() => {
+    if (state.currentSongIndex < 0) return null;
+    const item = playlistItems[state.currentSongIndex];
+    if (!item?.metadata) return null;
+    return `${item.metadata.album || "Unknown Album"}__${item.metadata.artist}`;
+  }, [state.currentSongIndex, playlistItems]);
+
+  // Get current song's artist name
+  const currentSongArtist = useMemo(() => {
+    if (state.currentSongIndex < 0) return null;
+    const item = playlistItems[state.currentSongIndex];
+    return item?.metadata?.artist || null;
+  }, [state.currentSongIndex, playlistItems]);
+
   // Open playlist
   const openPlaylist = () => {
-    setShowPlaylist(true);
+    startTransition(() => setViewMode("playlist"));
   };
 
-  // Scroll to current song when playlist opens
-  useEffect(() => {
-    if (
-      showPlaylist &&
-      playlistContainerRef.current &&
-      state.currentSongIndex >= 0
-    ) {
-      const currentItem = playlistContainerRef.current.children[
-        state.currentSongIndex
-      ] as HTMLElement;
-      if (currentItem) {
-        // Use instant scroll, not smooth - to show immediately
-        currentItem.scrollIntoView({ behavior: "instant", block: "center" });
+  // Compute albums from playlist items with metadata
+  const albums = useMemo<AlbumInfo[]>(() => {
+    const albumMap = new Map<string, AlbumInfo>();
+
+    playlistItems.forEach((item, idx) => {
+      if (!item.metadata) return;
+      const albumName = item.metadata.album || "Unknown Album";
+      const key = `${albumName}__${item.metadata.artist}`;
+
+      if (albumMap.has(key)) {
+        albumMap.get(key)!.trackIndices.push(idx);
+      } else {
+        albumMap.set(key, {
+          name: albumName,
+          artist: item.metadata.artist,
+          cover: item.metadata.cover,
+          trackIndices: [idx],
+        });
+      }
+    });
+
+    return Array.from(albumMap.values()).sort((a, b) =>
+      a.name.localeCompare(b.name)
+    );
+  }, [playlistItems]);
+
+  // Compute artists from playlist items with metadata
+  const artists = useMemo<ArtistInfo[]>(() => {
+    const artistMap = new Map<string, ArtistInfo>();
+    const artistAlbums = new Map<string, Set<string>>();
+
+    playlistItems.forEach((item, idx) => {
+      if (!item.metadata) return;
+      const artistName = item.metadata.artist || "Unknown Artist";
+
+      if (artistMap.has(artistName)) {
+        artistMap.get(artistName)!.trackIndices.push(idx);
+        artistAlbums
+          .get(artistName)!
+          .add(item.metadata.album || "Unknown Album");
+      } else {
+        artistMap.set(artistName, {
+          name: artistName,
+          cover: item.metadata.cover,
+          trackIndices: [idx],
+          albumCount: 1,
+        });
+        artistAlbums.set(
+          artistName,
+          new Set([item.metadata.album || "Unknown Album"])
+        );
+      }
+    });
+
+    // Update album count
+    artistMap.forEach((artist, name) => {
+      artist.albumCount = artistAlbums.get(name)?.size || 1;
+    });
+
+    return Array.from(artistMap.values()).sort((a, b) =>
+      a.name.localeCompare(b.name)
+    );
+  }, [playlistItems]);
+
+  // Get tracks for selected album
+  const selectedAlbumTracks = useMemo(() => {
+    if (!selectedAlbum) return [];
+    const album = albums.find(
+      (a) => `${a.name}__${a.artist}` === selectedAlbum
+    );
+    if (!album) return [];
+    return album.trackIndices.map((idx) => ({ item: playlistItems[idx], idx }));
+  }, [selectedAlbum, albums, playlistItems]);
+
+  // Get tracks for selected artist
+  const selectedArtistTracks = useMemo(() => {
+    if (!selectedArtist) return [];
+    const artist = artists.find((a) => a.name === selectedArtist);
+    if (!artist) return [];
+    return artist.trackIndices.map((idx) => ({
+      item: playlistItems[idx],
+      idx,
+    }));
+  }, [selectedArtist, artists, playlistItems]);
+
+  // Get selected album info for header (avoid recalculating in render)
+  const selectedAlbumInfo = useMemo(() => {
+    if (!selectedAlbum) return null;
+    return (
+      albums.find((a) => `${a.name}__${a.artist}` === selectedAlbum) || null
+    );
+  }, [selectedAlbum, albums]);
+
+  // Get selected artist info for header (avoid recalculating in render)
+  const selectedArtistInfo = useMemo(() => {
+    if (!selectedArtist) return null;
+    return artists.find((a) => a.name === selectedArtist) || null;
+  }, [selectedArtist, artists]);
+
+  // Load metadata for all tracks (for album/artist grouping)
+  const loadAllMetadata = async (items: PlaylistItem[]) => {
+    setMetadataLoaded(false);
+    const updatedItems = [...items];
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.metadata) continue;
+
+      try {
+        let metadata: PlaylistItemMetadata;
+
+        if (item.path && isElectron && window.electronAPI) {
+          const meta = await window.electronAPI.extractMetadata(item.path);
+          metadata = {
+            title: meta.title,
+            artist: meta.artist,
+            album: meta.album || "Unknown Album",
+            cover: meta.cover,
+          };
+        } else if (item.file) {
+          const meta = await extractMetadata(item.file);
+          metadata = {
+            title: meta.title,
+            artist: meta.artist,
+            album: meta.album || "Unknown Album",
+            cover: meta.cover,
+          };
+        } else {
+          metadata = {
+            title: item.name.replace(/\.[^/.]+$/, ""),
+            artist: "Unknown Artist",
+            album: "Unknown Album",
+          };
+        }
+
+        updatedItems[i] = { ...item, metadata };
+      } catch (e) {
+        console.error("Error loading metadata for", item.name, e);
+        updatedItems[i] = {
+          ...item,
+          metadata: {
+            title: item.name.replace(/\.[^/.]+$/, ""),
+            artist: "Unknown Artist",
+            album: "Unknown Album",
+          },
+        };
       }
     }
-  }, [showPlaylist]);
+
+    setPlaylistItems(updatedItems);
+    setMetadataLoaded(true);
+  };
+
+  // Scroll to current song when playlist opens (deferred for smooth transition)
+  useEffect(() => {
+    if (viewMode === "playlist" && state.currentSongIndex >= 0) {
+      requestAnimationFrame(() => {
+        if (!playlistContainerRef.current) return;
+        const currentItem = playlistContainerRef.current.children[
+          state.currentSongIndex
+        ] as HTMLElement;
+        if (currentItem) {
+          currentItem.scrollIntoView({ behavior: "instant", block: "center" });
+        }
+      });
+    }
+  }, [viewMode]);
+
+  // Scroll to current album when albums view opens (deferred for smooth transition)
+  useEffect(() => {
+    if (viewMode === "albums" && currentSongAlbumKey) {
+      requestAnimationFrame(() => {
+        if (!albumsContainerRef.current) return;
+        const albumIndex = albums.findIndex(
+          (a) => `${a.name}__${a.artist}` === currentSongAlbumKey
+        );
+        if (albumIndex >= 0) {
+          const albumElement = albumsContainerRef.current.children[
+            albumIndex
+          ] as HTMLElement;
+          if (albumElement) {
+            albumElement.scrollIntoView({
+              behavior: "instant",
+              block: "center",
+            });
+          }
+        }
+      });
+    }
+  }, [viewMode, currentSongAlbumKey, albums]);
+
+  // Scroll to current artist when artists view opens (deferred for smooth transition)
+  useEffect(() => {
+    if (viewMode === "artists" && currentSongArtist) {
+      requestAnimationFrame(() => {
+        if (!artistsContainerRef.current) return;
+        const artistIndex = artists.findIndex(
+          (a) => a.name === currentSongArtist
+        );
+        if (artistIndex >= 0) {
+          const artistElement = artistsContainerRef.current.children[
+            artistIndex
+          ] as HTMLElement;
+          if (artistElement) {
+            artistElement.scrollIntoView({
+              behavior: "instant",
+              block: "center",
+            });
+          }
+        }
+      });
+    }
+  }, [viewMode, currentSongArtist, artists]);
+
+  // Scroll to current song in album detail view (deferred for smooth transition)
+  useEffect(() => {
+    if (viewMode === "album-detail" && state.currentSongIndex >= 0) {
+      requestAnimationFrame(() => {
+        if (!albumDetailContainerRef.current) return;
+        const trackIndex = selectedAlbumTracks.findIndex(
+          ({ idx }) => idx === state.currentSongIndex
+        );
+        if (trackIndex >= 0) {
+          const trackElement = albumDetailContainerRef.current.children[
+            trackIndex
+          ] as HTMLElement;
+          if (trackElement) {
+            trackElement.scrollIntoView({
+              behavior: "instant",
+              block: "center",
+            });
+          }
+        }
+      });
+    }
+  }, [viewMode, selectedAlbum, state.currentSongIndex, selectedAlbumTracks]);
+
+  // Scroll to current song in artist detail view (deferred for smooth transition)
+  useEffect(() => {
+    if (viewMode === "artist-detail" && state.currentSongIndex >= 0) {
+      requestAnimationFrame(() => {
+        if (!artistDetailContainerRef.current) return;
+        const trackIndex = selectedArtistTracks.findIndex(
+          ({ idx }) => idx === state.currentSongIndex
+        );
+        if (trackIndex >= 0) {
+          const trackElement = artistDetailContainerRef.current.children[
+            trackIndex
+          ] as HTMLElement;
+          if (trackElement) {
+            trackElement.scrollIntoView({
+              behavior: "instant",
+              block: "center",
+            });
+          }
+        }
+      });
+    }
+  }, [viewMode, selectedArtist, state.currentSongIndex, selectedArtistTracks]);
 
   // Load saved playlist on startup (Electron only)
   useEffect(() => {
@@ -92,7 +391,9 @@ const App: React.FC = () => {
               name: p.split(/[/\\]/).pop() || p,
             }));
             setPlaylistItems(items);
-            setShowPlaylist(true);
+            setViewMode("playlist");
+            // Load metadata in background
+            loadAllMetadata(items);
           }
         }
       } catch (e) {
@@ -165,7 +466,9 @@ const App: React.FC = () => {
       }
     }
 
-    setShowPlaylist(true);
+    setViewMode("playlist");
+    // Load metadata in background
+    loadAllMetadata(items);
   };
 
   // Electron: Open folder using native dialog
@@ -189,7 +492,9 @@ const App: React.FC = () => {
 
     // Save to Electron storage
     await window.electronAPI.savePlaylist(filePaths);
-    setShowPlaylist(true);
+    setViewMode("playlist");
+    // Load metadata in background
+    loadAllMetadata(items);
   };
 
   // Electron: Open file using native dialog
@@ -387,7 +692,7 @@ const App: React.FC = () => {
     } else if (state.playlist[index]) {
       playSong(state.playlist[index], index);
     }
-    setShowPlaylist(false); // Chuyển sang tab Lyrics sau khi chọn bài
+    setViewMode("lyrics"); // Chuyển sang tab Lyrics sau khi chọn bài
   };
 
   const playNext = () => {
@@ -452,7 +757,12 @@ const App: React.FC = () => {
       currentTime: audio?.currentTime || 0,
       duration: audio?.duration || state.duration,
     });
-  }, [state.metadata.title, state.metadata.artist, state.isPlaying, state.currentSongIndex]);
+  }, [
+    state.metadata.title,
+    state.metadata.artist,
+    state.isPlaying,
+    state.currentSongIndex,
+  ]);
 
   // Clear Discord presence on unmount
   useEffect(() => {
@@ -545,9 +855,9 @@ const App: React.FC = () => {
 
         <div className="flex items-center gap-0">
           <button
-            onClick={() => setShowPlaylist(false)}
+            onClick={() => startTransition(() => setViewMode("lyrics"))}
             className={`square-btn px-6 py-2 text-xs font-bold uppercase tracking-widest cursor-pointer border-l border-white/10 ${
-              !showPlaylist
+              viewMode === "lyrics"
                 ? "bg-white text-black"
                 : "text-white/40 hover:text-white"
             }`}
@@ -557,12 +867,56 @@ const App: React.FC = () => {
           <button
             onClick={openPlaylist}
             className={`square-btn px-6 py-2 text-xs font-bold uppercase tracking-widest cursor-pointer border-l border-white/10 ${
-              showPlaylist
+              viewMode === "playlist"
                 ? "bg-white text-black"
                 : "text-white/40 hover:text-white"
             }`}
           >
             Playlist
+          </button>
+          <button
+            onClick={() => {
+              // Show loading immediately, then switch view
+              setIsViewReady(false);
+              if (currentSongAlbumKey) {
+                setSelectedAlbum(currentSongAlbumKey);
+                setViewMode("album-detail");
+              } else {
+                setSelectedAlbum(null);
+                setViewMode("albums");
+              }
+              // Mark view as ready after render
+              requestAnimationFrame(() => setIsViewReady(true));
+            }}
+            className={`square-btn px-6 py-2 text-xs font-bold uppercase tracking-widest cursor-pointer border-l border-white/10 ${
+              viewMode === "albums" || viewMode === "album-detail"
+                ? "bg-white text-black"
+                : "text-white/40 hover:text-white"
+            }`}
+          >
+            Albums
+          </button>
+          <button
+            onClick={() => {
+              // Show loading immediately, then switch view
+              setIsViewReady(false);
+              if (currentSongArtist) {
+                setSelectedArtist(currentSongArtist);
+                setViewMode("artist-detail");
+              } else {
+                setSelectedArtist(null);
+                setViewMode("artists");
+              }
+              // Mark view as ready after render
+              requestAnimationFrame(() => setIsViewReady(true));
+            }}
+            className={`square-btn px-6 py-2 text-xs font-bold uppercase tracking-widest cursor-pointer border-l border-white/10 ${
+              viewMode === "artists" || viewMode === "artist-detail"
+                ? "bg-white text-black"
+                : "text-white/40 hover:text-white"
+            }`}
+          >
+            Artists
           </button>
           {isElectron ? (
             <button
@@ -670,9 +1024,9 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        {/* Right Section: Lyrics List or Playlist */}
+        {/* Right Section: Lyrics List or Playlist or Albums or Artists */}
         <div className="w-full md:w-[60%] relative flex flex-col bg-black">
-          {showPlaylist ? (
+          {viewMode === "playlist" ? (
             <div className="flex flex-col h-full">
               <div className="w-full px-8 md:px-16 py-6 border-b border-white/10 bg-black z-20 shrink-0">
                 <h3 className="text-xs font-bold text-white/40 uppercase tracking-[0.3em]">
@@ -688,7 +1042,7 @@ const App: React.FC = () => {
                     <div
                       key={idx}
                       onClick={() => handleSongSelect(idx)}
-                      className={`playlist-item p-4 rounded-lg cursor-pointer flex items-center gap-4 ${
+                      className={`playlist-item virtual-list-item p-4 rounded-lg cursor-pointer flex items-center gap-4 ${
                         idx === state.currentSongIndex ? "active" : ""
                       }`}
                     >
@@ -696,8 +1050,14 @@ const App: React.FC = () => {
                         {String(idx + 1).padStart(2, "0")}
                       </span>
                       <span className="text-sm font-medium tracking-wide truncate flex-1">
-                        {item.name.replace(/\.[^/.]+$/, "")}
+                        {item.metadata?.title ||
+                          item.name.replace(/\.[^/.]+$/, "")}
                       </span>
+                      {item.metadata && (
+                        <span className="text-xs text-white/30 truncate max-w-[120px]">
+                          {item.metadata.artist}
+                        </span>
+                      )}
                       {idx === state.currentSongIndex && (
                         <div className="playing-indicator">
                           <span></span>
@@ -725,6 +1085,426 @@ const App: React.FC = () => {
                         </p>
                       </div>
                     )}
+                </div>
+              </div>
+            </div>
+          ) : viewMode === "albums" ? (
+            // Albums Grid View
+            <div className="flex flex-col h-full">
+              <div className="w-full px-8 md:px-16 py-6 border-b border-white/10 bg-black z-20 shrink-0">
+                <h3 className="text-xs font-bold text-white/40 uppercase tracking-[0.3em]">
+                  Albums ({albums.length})
+                </h3>
+              </div>
+              <div className="flex-1 w-full overflow-y-auto lyrics-scroll p-8 md:px-16">
+                {!metadataLoaded && playlistItems.length > 0 ? (
+                  <div className="flex flex-col items-center justify-center py-16 gap-4">
+                    <div className="loading-spinner"></div>
+                    <p className="text-white/40 text-sm uppercase tracking-widest">
+                      Loading metadata...
+                    </p>
+                  </div>
+                ) : albums.length > 0 ? (
+                  <div ref={albumsContainerRef} className="album-grid">
+                    {albums.map((album) => {
+                      const albumKey = `${album.name}__${album.artist}`;
+                      const isCurrentAlbum = albumKey === currentSongAlbumKey;
+                      return (
+                        <div
+                          key={albumKey}
+                          onClick={() => {
+                            setSelectedAlbum(albumKey);
+                            setViewMode("album-detail");
+                          }}
+                          className={`album-card cursor-pointer group ${
+                            isCurrentAlbum ? "album-playing" : ""
+                          }`}
+                        >
+                          <div className="album-card-cover">
+                            {album.cover ? (
+                              <LazyImage
+                                src={album.cover}
+                                alt={album.name}
+                                className="w-full h-full object-cover"
+                                placeholderClassName="w-full h-full"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-neutral-800 to-neutral-900">
+                                <svg
+                                  className="w-12 h-12 text-white/20"
+                                  fill="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
+                                </svg>
+                              </div>
+                            )}
+                            <div className="album-card-overlay">
+                              <svg
+                                className="w-12 h-12 text-white"
+                                fill="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path d="M8 5v14l11-7z" />
+                              </svg>
+                            </div>
+                          </div>
+                          <div className="mt-3 px-1">
+                            <p className="text-sm font-medium truncate text-white/90">
+                              {album.name}
+                            </p>
+                            <p className="text-xs text-white/40 truncate mt-0.5">
+                              {album.artist}
+                            </p>
+                            <p className="text-xs text-white/30 mt-1">
+                              {album.trackIndices.length} tracks
+                            </p>
+                          </div>
+                          {isCurrentAlbum && (
+                            <div className="absolute top-2 right-2 playing-indicator">
+                              <span></span>
+                              <span></span>
+                              <span></span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-16 gap-4">
+                    <svg
+                      className="w-16 h-16 text-white/10"
+                      fill="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
+                    </svg>
+                    <p className="text-white/20 text-sm uppercase tracking-widest">
+                      No albums found
+                    </p>
+                    <p className="text-white/10 text-xs">
+                      Import music to see albums
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : viewMode === "album-detail" && selectedAlbum ? (
+            // Album Detail View
+            <div className="flex flex-col h-full">
+              <div className="w-full px-8 md:px-16 py-6 border-b border-white/10 bg-black z-20 shrink-0">
+                <button
+                  onClick={() => {
+                    setIsViewReady(false);
+                    setViewMode("albums");
+                    requestAnimationFrame(() => setIsViewReady(true));
+                  }}
+                  className="text-xs text-white/40 hover:text-white uppercase tracking-widest flex items-center gap-2 mb-3"
+                >
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M15 19l-7-7 7-7"
+                    />
+                  </svg>
+                  Back to Albums
+                </button>
+                {selectedAlbumInfo && (
+                  <div className="flex items-center gap-4">
+                    <div className="w-16 h-16 rounded-lg overflow-hidden shrink-0">
+                      {selectedAlbumInfo.cover ? (
+                        <img
+                          src={selectedAlbumInfo.cover}
+                          alt={selectedAlbumInfo.name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-neutral-800 to-neutral-900">
+                          <svg
+                            className="w-6 h-6 text-white/20"
+                            fill="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
+                          </svg>
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-bold text-white">
+                        {selectedAlbumInfo.name}
+                      </h3>
+                      <p className="text-sm text-white/50">
+                        {selectedAlbumInfo.artist} •{" "}
+                        {selectedAlbumInfo.trackIndices.length} tracks
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="flex-1 w-full overflow-y-auto lyrics-scroll p-8 md:px-16">
+                <div
+                  ref={albumDetailContainerRef}
+                  className="flex flex-col gap-2"
+                >
+                  {selectedAlbumTracks.map(({ item, idx }, i) => (
+                    <div
+                      key={idx}
+                      onClick={() => handleSongSelect(idx)}
+                      className={`playlist-item virtual-list-item p-4 rounded-lg cursor-pointer flex items-center gap-4 ${
+                        idx === state.currentSongIndex ? "active" : ""
+                      }`}
+                    >
+                      <span className="text-xs font-mono text-white/30 w-6">
+                        {String(i + 1).padStart(2, "0")}
+                      </span>
+                      <span className="text-sm font-medium tracking-wide truncate flex-1">
+                        {item.metadata?.title ||
+                          item.name.replace(/\.[^/.]+$/, "")}
+                      </span>
+                      {idx === state.currentSongIndex && (
+                        <div className="playing-indicator">
+                          <span></span>
+                          <span></span>
+                          <span></span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : viewMode === "artists" ? (
+            // Artists List View
+            <div className="flex flex-col h-full">
+              <div className="w-full px-8 md:px-16 py-6 border-b border-white/10 bg-black z-20 shrink-0">
+                <h3 className="text-xs font-bold text-white/40 uppercase tracking-[0.3em]">
+                  Artists {isViewReady ? `(${artists.length})` : ""}
+                </h3>
+              </div>
+              <div className="flex-1 w-full overflow-y-auto lyrics-scroll p-8 md:px-16">
+                {!metadataLoaded && playlistItems.length > 0 ? (
+                  <div className="flex flex-col items-center justify-center py-16 gap-4">
+                    <div className="loading-spinner"></div>
+                    <p className="text-white/40 text-sm uppercase tracking-widest">
+                      Loading metadata...
+                    </p>
+                  </div>
+                ) : artists.length > 0 ? (
+                  <div
+                    ref={artistsContainerRef}
+                    className="flex flex-col gap-2"
+                  >
+                    {artists.map((artist) => {
+                      const isCurrentArtist = artist.name === currentSongArtist;
+                      return (
+                        <div
+                          key={artist.name}
+                          onClick={() => {
+                            setSelectedArtist(artist.name);
+                            setViewMode("artist-detail");
+                          }}
+                          className={`artist-item virtual-list-item p-4 rounded-lg cursor-pointer flex items-center gap-4 ${
+                            isCurrentArtist ? "active" : ""
+                          }`}
+                        >
+                          <div className="w-10 h-10 rounded-full shrink-0 overflow-hidden">
+                            {artist.cover ? (
+                              <LazyImage
+                                src={artist.cover}
+                                alt={artist.name}
+                                className="w-full h-full object-cover"
+                                placeholderClassName="w-full h-full rounded-full"
+                              />
+                            ) : (
+                              <div className="w-full h-full bg-gradient-to-br from-neutral-700 to-neutral-900 flex items-center justify-center">
+                                <svg
+                                  className="w-5 h-5 text-white/40"
+                                  fill="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+                                </svg>
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate text-white/90">
+                              {artist.name}
+                            </p>
+                            <p className="text-xs text-white/40">
+                              {artist.albumCount} album
+                              {artist.albumCount > 1 ? "s" : ""} •{" "}
+                              {artist.trackIndices.length} tracks
+                            </p>
+                          </div>
+                          {isCurrentArtist ? (
+                            <div className="playing-indicator">
+                              <span></span>
+                              <span></span>
+                              <span></span>
+                            </div>
+                          ) : (
+                            <svg
+                              className="w-5 h-5 text-white/20"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M9 5l7 7-7 7"
+                              />
+                            </svg>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-16 gap-4">
+                    <svg
+                      className="w-16 h-16 text-white/10"
+                      fill="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+                    </svg>
+                    <p className="text-white/20 text-sm uppercase tracking-widest">
+                      No artists found
+                    </p>
+                    <p className="text-white/10 text-xs">
+                      Import music to see artists
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : viewMode === "artist-detail" && selectedArtist ? (
+            // Artist Detail View
+            <div className="flex flex-col h-full">
+              <div className="w-full px-8 md:px-16 py-6 border-b border-white/10 bg-black z-20 shrink-0">
+                <button
+                  onClick={() => {
+                    setIsViewReady(false);
+                    setViewMode("artists");
+                    requestAnimationFrame(() => setIsViewReady(true));
+                  }}
+                  className="text-xs text-white/40 hover:text-white uppercase tracking-widest flex items-center gap-2 mb-3"
+                >
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M15 19l-7-7 7-7"
+                    />
+                  </svg>
+                  Back to Artists
+                </button>
+                {selectedArtistInfo && (
+                  <div className="flex items-center gap-4">
+                    <div className="w-16 h-16 rounded-full overflow-hidden shrink-0 bg-gradient-to-br from-neutral-700 to-neutral-900">
+                      {selectedArtistInfo.cover ? (
+                        <img
+                          src={selectedArtistInfo.cover}
+                          alt={selectedArtistInfo.name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <svg
+                            className="w-8 h-8 text-white/30"
+                            fill="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+                          </svg>
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-bold text-white">
+                        {selectedArtistInfo.name}
+                      </h3>
+                      <p className="text-sm text-white/50">
+                        {selectedArtistInfo.albumCount} album
+                        {selectedArtistInfo.albumCount > 1 ? "s" : ""} •{" "}
+                        {selectedArtistInfo.trackIndices.length} tracks
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="flex-1 w-full overflow-y-auto lyrics-scroll p-8 md:px-16">
+                <div
+                  ref={artistDetailContainerRef}
+                  className="flex flex-col gap-2"
+                >
+                  {selectedArtistTracks.map(({ item, idx }, i) => (
+                    <div
+                      key={idx}
+                      onClick={() => handleSongSelect(idx)}
+                      className={`playlist-item virtual-list-item p-4 rounded-lg cursor-pointer flex items-center gap-4 ${
+                        idx === state.currentSongIndex ? "active" : ""
+                      }`}
+                    >
+                      <span className="text-xs font-mono text-white/30 w-6">
+                        {String(i + 1).padStart(2, "0")}
+                      </span>
+                      <div className="w-10 h-10 rounded shrink-0 overflow-hidden">
+                        {item.metadata?.cover ? (
+                          <LazyImage
+                            src={item.metadata.cover}
+                            alt=""
+                            className="w-full h-full object-cover"
+                            placeholderClassName="w-full h-full"
+                          />
+                        ) : (
+                          <div className="w-full h-full bg-neutral-800 flex items-center justify-center">
+                            <svg
+                              className="w-4 h-4 text-white/20"
+                              fill="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
+                            </svg>
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm font-medium tracking-wide truncate block">
+                          {item.metadata?.title ||
+                            item.name.replace(/\.[^/.]+$/, "")}
+                        </span>
+                        <span className="text-xs text-white/40 truncate block">
+                          {item.metadata?.album || "Unknown Album"}
+                        </span>
+                      </div>
+                      {idx === state.currentSongIndex && (
+                        <div className="playing-indicator">
+                          <span></span>
+                          <span></span>
+                          <span></span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
@@ -800,7 +1580,7 @@ const App: React.FC = () => {
             </div>
           )}
           {/* Enhanced Fade Overlays */}
-          {!showPlaylist && hasLyrics && (
+          {viewMode === "lyrics" && hasLyrics && (
             <>
               <div
                 className={`absolute top-0 left-0 w-full ${

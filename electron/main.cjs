@@ -127,6 +127,13 @@ function saveConfig(config) {
 
 let mainWindow;
 
+// Electron performance optimizations for Windows
+app.commandLine.appendSwitch('enable-gpu-rasterization');
+app.commandLine.appendSwitch('enable-zero-copy');
+app.commandLine.appendSwitch('disable-software-rasterizer');
+app.commandLine.appendSwitch('enable-accelerated-video-decode');
+app.commandLine.appendSwitch('enable-native-gpu-memory-buffers');
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -134,13 +141,21 @@ function createWindow() {
     minWidth: 900,
     minHeight: 600,
     backgroundColor: "#000000",
+    show: false, // Don't show until ready
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, "preload.cjs"),
+      backgroundThrottling: false, // Don't throttle when in background
+      enableBlinkFeatures: 'CSSContentVisibilityAutoStateChange',
     },
     frame: true,
     titleBarStyle: "default",
+  });
+
+  // Show window when ready to prevent white flash
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
   });
 
   // Load the app

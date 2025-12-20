@@ -27,3 +27,26 @@ export interface SongState {
   playlist: File[];
   currentSongIndex: number;
 }
+
+// Album and Artist grouping
+export interface AlbumInfo {
+  name: string;
+  artist: string;
+  cover?: string;
+  trackIndices: number[]; // Indices in playlistItems
+}
+
+export interface ArtistInfo {
+  name: string;
+  cover?: string; // First album cover
+  trackIndices: number[];
+  albumCount: number;
+}
+
+// Extended playlist item with cached metadata
+export interface PlaylistItemMetadata {
+  title: string;
+  artist: string;
+  album: string;
+  cover?: string;
+}
