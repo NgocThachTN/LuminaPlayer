@@ -42,53 +42,52 @@
             display: none;
         }
         /* Enhanced Lyrics Styling */
+        /* Enhanced Lyrics Styling - Apple Music Style */
         .lyric-item {
             position: relative;
-            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-            opacity: 0.15;
-            padding: 0.875rem 1.25rem;
-            margin: 0.25rem 0;
-            border-radius: 8px;
-            transform: scale(0.98) translateX(0);
+            transition: transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.6s ease, filter 0.6s ease;
+            opacity: 0.45; /* Increased from 0.25 */
+            padding: 1rem 2rem;
+            margin: 0.5rem 0;
+            border-radius: 12px;
+            transform: scale(0.98);
             transform-origin: left center;
-            will-change: opacity, transform;
-            font-weight: 400;
-            letter-spacing: 0.02em;
-            color: rgba(255, 255, 255, 0.9);
+            will-change: transform, opacity, filter;
+            font-weight: 600; /* Increased to match active */
+            font-size: 2.25rem;
+            line-height: 1.3;
+            letter-spacing: -0.01em;
+            color: #ffffff;
+            filter: blur(0.8px); /* Soft blur for inactive lines */
+            cursor: pointer;
         }
         .lyric-item:hover {
-            opacity: 0.4;
-            background: rgba(255, 255, 255, 0.02);
+            opacity: 0.6;
+            filter: blur(0px);
+            background: rgba(255, 255, 255, 0.03);
         }
         /* Active lyric - karaoke style */
         .lyric-item.active-lyric {
             opacity: 1;
-            transform: scale(1) translateX(8px);
-            font-weight: 500;
+            transform: scale(1.05) translateX(0);
+            font-weight: 600; /* Same as normal */
             color: #ffffff;
-            text-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+            filter: blur(0px);
+            text-shadow: 0 0 20px rgba(255, 255, 255, 0.6); /* Bright soft glow */
         }
         .lyric-item.active-lyric::before {
-            content: '';
-            position: absolute;
-            left: 0;
-            top: 50%;
-            transform: translateY(-50%);
-            width: 3px;
-            height: 50%;
-            background: linear-gradient(180deg, rgba(255,255,255,0.8) 0%, rgba(255,255,255,0.2) 100%);
-            border-radius: 2px;
-            box-shadow: 0 0 8px rgba(255, 255, 255, 0.4);
+            display: none;
         }
-        /* Lyrics near active - gradient fade */
         .lyric-item.near-active {
-            transform: scale(0.99);
+            transform: scale(1);
+            filter: blur(0.3px);
+            opacity: 0.75;
         }
         .lyric-item.near-active-1 {
-            opacity: 0.4;
+            opacity: 0.65;
         }
         .lyric-item.near-active-2 {
-            opacity: 0.25;
+            opacity: 0.55;
         }
         /* Upcoming lyrics slightly brighter */
         .lyric-item.upcoming {
@@ -105,17 +104,9 @@
             opacity: 0.8;
         }
         /* Lyrics container gradient overlays */
-        .lyrics-fade-top {
-            background: linear-gradient(to bottom, 
-                var(--bg) 0%, 
-                rgba(5, 5, 5, 0.8) 40%,
-                transparent 100%);
-        }
-        .lyrics-fade-bottom {
-            background: linear-gradient(to top, 
-                var(--bg) 0%, 
-                rgba(5, 5, 5, 0.8) 40%,
-                transparent 100%);
+        /* Removed fade overlays */
+        .lyrics-fade-top, .lyrics-fade-bottom {
+            display: none;
         }
         input[type="range"] {
             -webkit-appearance: none;
@@ -261,7 +252,7 @@
         }
         /* Glassmorphism header */
         .glass-header {
-            background: rgba(5, 5, 5, 0.8);
+            background: rgba(5, 5, 5, 0.2);
             backdrop-filter: blur(20px);
             -webkit-backdrop-filter: blur(20px);
         }
@@ -360,7 +351,7 @@
             to { transform: translateY(-50%) rotate(360deg); }
         }
         .vinyl-spinning {
-            animation: spin-vinyl 3s linear infinite;
+            animation: spin-vinyl 4s linear infinite;
         }
 
         /* Album Grid Styles */
@@ -497,6 +488,21 @@
                 transparent 100%
             );
             animation: shimmer 1.2s ease-in-out infinite;
+        }
+        /* Custom Popup Animation */
+        @keyframes slideUpFade {
+            from {
+                opacity: 0;
+                transform: translate(-50%, 10px) scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: translate(-50%, 0) scale(1);
+            }
+        }
+        .popup-animate {
+            animation: slideUpFade 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            transform-origin: bottom center;
         }
     </style>
 </head>

@@ -219,9 +219,11 @@ function createWindow() {
       preload: path.join(__dirname, "preload.cjs"),
       backgroundThrottling: false, // Don't throttle when in background
       enableBlinkFeatures: 'CSSContentVisibilityAutoStateChange',
+      zoomFactor: 1.05,
     },
     frame: true,
     titleBarStyle: "default",
+    autoHideMenuBar: true, // Hide File/Edit menu
   });
 
   // Show window when ready to prevent white flash

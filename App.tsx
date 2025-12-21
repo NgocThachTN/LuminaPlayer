@@ -15,6 +15,7 @@ import {
 } from "./types";
 import { getLyrics } from "./services/geminiService";
 import { extractMetadata, resolveITunesCoverUrl } from "./services/metadataService";
+import { getDominantColor, adjustBrightness, ensureDarkColor } from "./services/colorService";
 import { Visualizer } from "./components/Visualizer";
 import { ApiKeyModal } from "./components/ApiKeyModal";
 import { LazyImage } from "./components/LazyImage";
@@ -56,7 +57,20 @@ const App: React.FC = () => {
 
   // Extended playlist with paths for Electron persistence
   const [playlistItems, setPlaylistItems] = useState<PlaylistItem[]>([]);
+  
+  // UI States
+  const [isUserScrolling, setIsUserScrolling] = useState(false);
+  const userScrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
   const [isLoading, setIsLoading] = useState(false);
+
+  // Helper to normalize text to Title Case
+  const toTitleCase = (str: string) => {
+    return str.replace(
+      /\w\S*/g,
+      (txt) => txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase()
+    );
+  };
   const [viewMode, setViewMode] = useState<ViewMode>("lyrics");
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
   const [selectedAlbum, setSelectedAlbum] = useState<string | null>(null);
@@ -66,6 +80,20 @@ const App: React.FC = () => {
   const [isViewReady, setIsViewReady] = useState(true);
   const [deferredViewMode, setDeferredViewMode] = useState<ViewMode>("lyrics");
   const [isLdacSupported, setIsLdacSupported] = useState(false);
+  const [dominantColor, setDominantColor] = useState<string>("#050505");
+  const [isFullScreenPlayer, setIsFullScreenPlayer] = useState(false);
+  const [isRestoringLayout, setIsRestoringLayout] = useState(false);
+  const [volume, setVolume] = useState(1);
+  const [showLyrics, setShowLyrics] = useState(false);
+  const [showVolumePopup, setShowVolumePopup] = useState(false);
+  const [hasCheckedSaved, setHasCheckedSaved] = useState(false);
+
+  // Sync volume with audio element
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.volume = volume;
+    }
+  }, [volume]);
 
   // Sync deferred view mode with actual view mode (with slight delay for smooth transition)
   useEffect(() => {
@@ -118,15 +146,16 @@ const App: React.FC = () => {
 
     playlistItems.forEach((item, idx) => {
       if (!item.metadata) return;
-      const albumName = item.metadata.album || "Unknown Album";
-      const key = `${albumName}__${item.metadata.artist}`;
+      const albumName = toTitleCase(item.metadata.album || "Unknown Album");
+      const artistName = toTitleCase(item.metadata.artist || "Unknown Artist");
+      const key = `${albumName}__${artistName}`;
 
       if (albumMap.has(key)) {
         albumMap.get(key)!.trackIndices.push(idx);
       } else {
         albumMap.set(key, {
           name: albumName,
-          artist: item.metadata.artist,
+          artist: artistName,
           cover: item.metadata.cover,
           trackIndices: [idx],
         });
@@ -145,13 +174,13 @@ const App: React.FC = () => {
 
     playlistItems.forEach((item, idx) => {
       if (!item.metadata) return;
-      const artistName = item.metadata.artist || "Unknown Artist";
+      const artistName = toTitleCase(item.metadata.artist || "Unknown Artist");
 
       if (artistMap.has(artistName)) {
         artistMap.get(artistName)!.trackIndices.push(idx);
         artistAlbums
           .get(artistName)!
-          .add(item.metadata.album || "Unknown Album");
+          .add(toTitleCase(item.metadata.album || "Unknown Album"));
       } else {
         artistMap.set(artistName, {
           name: artistName,
@@ -161,7 +190,7 @@ const App: React.FC = () => {
         });
         artistAlbums.set(
           artistName,
-          new Set([item.metadata.album || "Unknown Album"])
+          new Set([toTitleCase(item.metadata.album || "Unknown Album")])
         );
       }
     });
@@ -226,22 +255,22 @@ const App: React.FC = () => {
         if (item.path && isElectron && window.electronAPI) {
           const meta = await window.electronAPI.extractMetadata(item.path);
           metadata = {
-            title: meta.title,
-            artist: meta.artist,
-            album: meta.album || "Unknown Album",
+            title: toTitleCase(meta.title),
+            artist: toTitleCase(meta.artist),
+            album: toTitleCase(meta.album || "Unknown Album"),
             cover: meta.cover,
           };
         } else if (item.file) {
           const meta = await extractMetadata(item.file);
           metadata = {
-            title: meta.title,
-            artist: meta.artist,
-            album: meta.album || "Unknown Album",
+            title: toTitleCase(meta.title),
+            artist: toTitleCase(meta.artist),
+            album: toTitleCase(meta.album || "Unknown Album"),
             cover: meta.cover,
           };
         } else {
           metadata = {
-            title: item.name.replace(/\.[^/.]+$/, ""),
+            title: toTitleCase(item.name.replace(/\.[^/.]+$/, "")),
             artist: "Unknown Artist",
             album: "Unknown Album",
           };
@@ -253,7 +282,7 @@ const App: React.FC = () => {
         updatedItems[i] = {
           ...item,
           metadata: {
-            title: item.name.replace(/\.[^/.]+$/, ""),
+            title: toTitleCase(item.name.replace(/\.[^/.]+$/, "")),
             artist: "Unknown Artist",
             album: "Unknown Album",
           },
@@ -375,7 +404,10 @@ const App: React.FC = () => {
   // Load saved playlist on startup (Electron only)
   useEffect(() => {
     const loadSavedPlaylist = async () => {
-      if (!isElectron || !window.electronAPI) return;
+      if (!isElectron || !window.electronAPI) {
+        setHasCheckedSaved(true);
+        return;
+      }
 
       try {
         const savedPaths = await window.electronAPI.getPlaylist();
@@ -400,10 +432,11 @@ const App: React.FC = () => {
         }
       } catch (e) {
         console.error("Error loading saved playlist:", e);
+      } finally {
+        setHasCheckedSaved(true);
       }
     };
 
-    loadSavedPlaylist();
     loadSavedPlaylist();
   }, []);
 
@@ -588,6 +621,7 @@ const App: React.FC = () => {
     let fileSize: number | null = null;
     let metadataTitle = item.name.replace(/\.[^/.]+$/, "");
     let metadataArtist = "Unknown Artist";
+    let metadataAlbum = "Unknown Album";
 
     // If we have a File object, use it
     if (item.file) {
@@ -606,6 +640,25 @@ const App: React.FC = () => {
         metadataTitle = info.title;
         metadataArtist = info.artist;
         fileSize = info.size || null;
+      }
+    }
+
+    // Use cached metadata if available (prevents flashing "Unknown Artist")
+    if (item.metadata) {
+      metadataTitle = item.metadata.title || metadataTitle;
+      metadataArtist = item.metadata.artist || metadataArtist;
+      metadataAlbum = item.metadata.album || metadataAlbum;
+    } else {
+      // Try to parse filename for "Artist - Title" pattern
+      // This provides immediate metadata while waiting for ID3 tags
+      const filenameBase = item.name.replace(/\.[^/.]+$/, "");
+      const parts = filenameBase.split(" - ");
+      if (parts.length >= 2) {
+           metadataArtist = toTitleCase(parts[0].trim());
+           // Join the rest in case title also has hyphens
+           metadataTitle = toTitleCase(parts.slice(1).join(" - ").trim());
+      } else {
+           metadataTitle = toTitleCase(filenameBase);
       }
     }
 
@@ -633,7 +686,8 @@ const App: React.FC = () => {
       metadata: {
         title: metadataTitle,
         artist: metadataArtist,
-        cover: prev.metadata.cover, // Keep old cover until new one loads
+        album: metadataAlbum,
+        cover: item.metadata?.cover || prev.metadata.cover, // Use cached cover if available, else keep old
       },
       lyrics: emptyLyrics,
       isPlaying: true,
@@ -663,15 +717,15 @@ const App: React.FC = () => {
         if (item.path && isElectron && window.electronAPI) {
           // Electron: Use IPC to extract metadata directly from file (FAST - only reads metadata bytes)
           const metadata = await window.electronAPI.extractMetadata(item.path);
-          finalTitle = metadata.title;
-          finalArtist = metadata.artist;
-          finalMetadata = metadata;
+          finalTitle = toTitleCase(metadata.title);
+          finalArtist = toTitleCase(metadata.artist);
+          finalMetadata = { ...metadata, title: finalTitle, artist: finalArtist };
         } else if (file) {
           // Browser: Use jsmediatags on File object
           const metadata = await extractMetadata(file);
-          finalTitle = metadata.title;
-          finalArtist = metadata.artist;
-          finalMetadata = metadata;
+          finalTitle = toTitleCase(metadata.title);
+          finalArtist = toTitleCase(metadata.artist);
+          finalMetadata = { ...metadata, title: finalTitle, artist: finalArtist };
         }
       } catch (e) {
         console.error("Error extracting metadata:", e);
@@ -721,7 +775,7 @@ const App: React.FC = () => {
     } else if (state.playlist[index]) {
       playSong(state.playlist[index], index);
     }
-    setViewMode("lyrics"); // Chuyển sang tab Lyrics sau khi chọn bài
+    // viewMode intentionally untouched to preserve current context
   };
 
   const playNext = () => {
@@ -773,6 +827,19 @@ const App: React.FC = () => {
       audioRef.current.play().catch((e) => console.error("Playback failed", e));
     }
   }, [state.url, state.isPlaying]);
+
+  // Extract dominant color from album cover
+  useEffect(() => {
+    let isMounted = true;
+    if (state.metadata.cover) {
+      getDominantColor(state.metadata.cover).then((color) => {
+        if (isMounted) setDominantColor(color);
+      });
+    } else {
+      setDominantColor("#050505");
+    }
+    return () => { isMounted = false; };
+  }, [state.metadata.cover]);
 
   // Update Discord Rich Presence - only when song/state changes
   useEffect(() => {
@@ -907,165 +974,128 @@ const App: React.FC = () => {
     state.lyrics.synced.length > 0 || state.lyrics.plain.length > 0;
 
   return (
-    <div className="h-screen w-full flex flex-col bg-black text-white overflow-hidden app-bg">
-      {/* Top Border Navigation */}
-      <header className="glass-header w-full flex justify-between items-center border-b border-white/10 px-6 py-3 z-50">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-white/20 to-white/5 flex items-center justify-center">
-            <svg
-              className="w-4 h-4 text-white"
-              fill="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
-            </svg>
-          </div>
-          <span className="font-semibold text-sm tracking-wide text-white/80 hidden sm:inline">
-            Lumina
-          </span>
-        </div>
+    <div 
+      className="h-screen w-full flex flex-col bg-black text-white overflow-hidden app-bg transition-colors duration-700 ease-in-out"
+      style={{
+        background: `linear-gradient(to bottom right, ${dominantColor}, ${adjustBrightness(dominantColor, -0.4)})`
+      } as React.CSSProperties}
+    >
+      {/* Import Screen / Empty State */}
+      {hasCheckedSaved && playlistItems.length === 0 && (
+        <div className="fixed inset-0 z-[200] flex flex-col items-center justify-center bg-[#050505] text-white">
+           <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=2070&auto=format&fit=crop')] bg-cover bg-center opacity-20 blur-2xl"></div>
+           <div className="absolute inset-0 bg-gradient-to-t from-[#050505] via-[#050505]/80 to-transparent"></div>
+           
+           <div className="relative z-10 flex flex-col items-center gap-8 max-w-md text-center p-8">
+              <div className="mb-4">
+                 <h1 className="text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white via-white/80 to-white/50 mb-2">Lumina Player</h1>
+                 <p className="text-white/50 text-lg tracking-wide uppercase font-light">Your Local Music Sanctum</p>
+              </div>
 
-        <div className="flex items-center gap-0">
-          <button
-            onClick={() => startTransition(() => setViewMode("lyrics"))}
-            className={`square-btn px-6 py-2 text-xs font-bold uppercase tracking-widest cursor-pointer border-l border-white/10 ${
-              viewMode === "lyrics"
-                ? "bg-white text-black"
-                : "text-white/40 hover:text-white"
-            }`}
-          >
-            Lyrics
-          </button>
-          <button
-            onClick={openPlaylist}
-            className={`square-btn px-6 py-2 text-xs font-bold uppercase tracking-widest cursor-pointer border-l border-white/10 ${
-              viewMode === "playlist"
-                ? "bg-white text-black"
-                : "text-white/40 hover:text-white"
-            }`}
-          >
-            Playlist
-          </button>
-          <button
-            onClick={() => {
-              // Show loading immediately, then switch view
-              setIsViewReady(false);
-              if (currentSongAlbumKey) {
-                setSelectedAlbum(currentSongAlbumKey);
-                setViewMode("album-detail");
-              } else {
-                setSelectedAlbum(null);
-                setViewMode("albums");
-              }
-              // Mark view as ready after render
-              requestAnimationFrame(() => setIsViewReady(true));
-            }}
-            className={`square-btn px-6 py-2 text-xs font-bold uppercase tracking-widest cursor-pointer border-l border-white/10 ${
-              viewMode === "albums" || viewMode === "album-detail"
-                ? "bg-white text-black"
-                : "text-white/40 hover:text-white"
-            }`}
-          >
-            Albums
-          </button>
-          <button
-            onClick={() => {
-              // Show loading immediately, then switch view
-              setIsViewReady(false);
-              if (currentSongArtist) {
-                setSelectedArtist(currentSongArtist);
-                setViewMode("artist-detail");
-              } else {
-                setSelectedArtist(null);
-                setViewMode("artists");
-              }
-              // Mark view as ready after render
-              requestAnimationFrame(() => setIsViewReady(true));
-            }}
-            className={`square-btn px-6 py-2 text-xs font-bold uppercase tracking-widest cursor-pointer border-l border-white/10 ${
-              viewMode === "artists" || viewMode === "artist-detail"
-                ? "bg-white text-black"
-                : "text-white/40 hover:text-white"
-            }`}
-          >
-            Artists
-          </button>
-          {isElectron ? (
-            <button
-              onClick={handleElectronFolderSelect}
-              className="square-btn px-6 py-2 text-xs font-bold uppercase tracking-widest cursor-pointer border-l border-white/10"
-            >
-              Import Folder
-            </button>
-          ) : (
-            <label className="square-btn px-6 py-2 text-xs font-bold uppercase tracking-widest cursor-pointer border-l border-white/10">
-              Import Folder
-              <input
-                type="file"
-                // @ts-ignore
-                webkitdirectory=""
-                directory=""
-                className="hidden"
-                onChange={handleFolderChange}
-              />
-            </label>
-          )}
-          {isElectron ? (
-            <button
-              onClick={handleElectronFileSelect}
-              className="square-btn px-6 py-2 text-xs font-bold uppercase tracking-widest cursor-pointer border-l border-white/10"
-            >
-              Import Track
-            </button>
-          ) : (
-            <label className="square-btn px-6 py-2 text-xs font-bold uppercase tracking-widest cursor-pointer border-l border-white/10">
-              Import Track
-              <input
-                type="file"
-                accept="audio/*"
-                className="hidden"
-                onChange={handleFileChange}
-              />
-            </label>
-          )}
-          <button
-            onClick={() => setShowApiKeyModal(true)}
-            className="square-btn px-4 py-2 text-xs font-bold uppercase tracking-widest cursor-pointer border-l border-white/10"
-            title="Settings"
-          >
-            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" />
-            </svg>
-          </button>
+              <div className="w-full h-[1px] bg-gradient-to-r from-transparent via-white/20 to-transparent"></div>
+
+              <div className="flex flex-col gap-4 w-full">
+                 <p className="text-white/70 mb-2">Import your music to begin</p>
+                 
+                 {isElectron ? (
+                    <>
+                    <button 
+                      onClick={handleElectronFolderSelect}
+                      className="w-full py-4 px-6 bg-white text-black font-bold uppercase tracking-widest rounded-lg hover:bg-white/90 hover:scale-[1.02] transition-all shadow-[0_0_20px_rgba(255,255,255,0.2)]"
+                    >
+                      Open Music Folder
+                    </button>
+                    <button 
+                      onClick={handleElectronFileSelect}
+                      className="w-full py-4 px-6 bg-white/10 text-white font-medium uppercase tracking-widest rounded-lg hover:bg-white/20 transition-all border border-white/10 backdrop-blur-md"
+                    >
+                      Open File
+                    </button>
+                    </>
+                 ) : (
+                    <>
+                    <label className="w-full py-4 px-6 bg-white text-black font-bold uppercase tracking-widest rounded-lg hover:bg-white/90 hover:scale-[1.02] transition-all shadow-[0_0_20px_rgba(255,255,255,0.2)] cursor-pointer flex items-center justify-center">
+                      <span>Open Music Folder</span>
+                      <input type="file" // @ts-ignore
+                       webkitdirectory="" directory="" className="hidden" onChange={handleFolderChange} />
+                    </label>
+                    <label className="w-full py-4 px-6 bg-white/10 text-white font-medium uppercase tracking-widest rounded-lg hover:bg-white/20 transition-all border border-white/10 backdrop-blur-md cursor-pointer flex items-center justify-center">
+                      <span>Open File</span>
+                      <input type="file" accept="audio/*" className="hidden" onChange={handleFileChange} />
+                    </label>
+                    </>
+                 )}
+              </div>
+           </div>
         </div>
-      </header>
+      )}
+
+      {/* Initial Loading Screen */}
+      {(!hasCheckedSaved) && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-[#050505] text-white">
+          <div className="loading-spinner"></div>
+        </div>
+      )}
+
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-3xl z-0 pointer-events-none"></div>
+      
+
 
       {/* Grid Content Area */}
-      <main className="flex-1 w-full flex flex-col md:flex-row overflow-hidden">
+      <main className="flex-1 w-full flex flex-col relative overflow-hidden">
         {/* Left Section: Information Grid */}
-        <div className="w-full md:w-[40%] flex flex-col border-r border-white/10 overflow-y-auto hide-scrollbar">
-          {/* Album Cover Container - Fixed aspect ratio */}
-          <div className="w-full p-8 flex items-center justify-center">
-            <div className="album-cover-container relative">
+        {/* Left Section: Information Grid - Fixed Layout */}
+        {/* Player Overlay - Fixed Slide-up Panel */}
+        <div 
+          className={`fixed inset-0 z-[60] flex flex-col md:flex-row transition-transform duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] ${isFullScreenPlayer ? 'translate-y-0' : 'translate-y-full'}`}
+          style={{ backgroundColor: ensureDarkColor(dominantColor, 0.2) || '#171717' }} // Use dynamic color provided it is dark enough
+        >
+           {/* Collapse Button */}
+           <button 
+             onClick={() => {
+               setIsFullScreenPlayer(false);
+               if (viewMode === 'lyrics') {
+                  // Switch view IMMEDIATELY but hide content temporarily
+                  setIsRestoringLayout(true);
+                  setViewMode('albums');
+                  
+                  // Reveal content after transition finishes (700ms)
+                  setTimeout(() => {
+                    setIsRestoringLayout(false);
+                  }, 700);
+               }
+             }}
+             className="absolute top-6 left-6 z-50 p-2 text-white/50 hover:text-white bg-black/20 hover:bg-black/40 backdrop-blur-md rounded-full transition-all"
+             title="Collapse to Mini Player"
+           >
+             <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/></svg>
+           </button>
+
+           {/* Left Column Wrapper */}
+           <div className={`h-full flex flex-col relative bg-transparent z-20 transition-[flex-basis,transform] duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] will-change-[flex-basis] transform-gpu items-center justify-center ${showLyrics ? 'w-full md:flex-[0_0_45%]' : 'w-full md:flex-[1_0_100%]'}`}>
+
+          {/* Top: Album Art */}
+          <div className="w-full flex-none flex items-center justify-center p-8 pb-10">
+            <div className="album-cover-container relative w-full max-w-[360px] aspect-square">
               {/* Vinyl record effect */}
               <div
                 className={`vinyl-record ${
-                  state.isPlaying ? "vinyl-spinning" : ""
+                  state.isPlaying && isFullScreenPlayer ? "vinyl-spinning" : ""
                 }`}
               ></div>
 
               {/* Album cover */}
-              <div className="album-cover aspect-square w-full max-w-[320px] bg-neutral-900 rounded-md overflow-hidden flex items-center justify-center">
+              <div className="album-cover w-full h-full bg-neutral-900 rounded-lg overflow-hidden flex items-center justify-center shadow-2xl relative z-10">
                 {state.metadata.cover ? (
                   <img
                     src={state.metadata.cover}
-                    className="w-full h-full object-contain"
+                    className="w-full h-full object-cover"
                     alt="Cover Art"
                   />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-neutral-800 to-neutral-900">
                     <svg
-                      className="w-16 h-16 text-white/10"
+                      className="w-20 h-20 text-white/10"
                       fill="currentColor"
                       viewBox="0 0 24 24"
                     >
@@ -1077,34 +1107,362 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          {/* Song Info - Centered below cover */}
-          <div className="px-6 pb-4 text-center">
-            <h2 className="text-2xl md:text-3xl font-bold mb-2 leading-tight tracking-tight line-clamp-2">
-              {state.metadata.title}
-            </h2>
-            <p className="text-white/50 text-sm font-medium uppercase tracking-[0.15em]">
-              {state.metadata.artist}
-            </p>
-          </div>
+          {/* Bottom: Controls & Info */}
+          <div className="w-full px-10 z-20 mt-0">
+             {/* Song Info & Metadata */}
+             <div className="flex flex-col items-center gap-0.5 mb-6 w-full">
+               <div className="flex items-center justify-center w-full px-4">
+                 <h2 className="text-xl md:text-2xl font-bold leading-tight text-white text-center drop-shadow-md">
+                    {state.metadata.title || "No Title"}
+                 </h2>
+               </div>
+               
+               <p className="text-white/60 text-sm md:text-base font-medium tracking-wide text-center">
+                  {state.metadata.artist || "Unknown Artist"} <span className="opacity-60 mx-1">—</span> {state.metadata.album || "Unknown Album"}
+               </p>
 
-          {/* Visualizer */}
-          <div className="px-6 pb-6 mt-auto">
-            <Visualizer
-              audioElement={audioRef.current}
-              isPlaying={state.isPlaying}
-            />
+               {/* Only show badge for Lossless formats */}
+               {['FLAC', 'WAV', 'AIFF', 'ALAC'].includes(audioInfo.format || "") && (
+                 <div className="flex items-center gap-1 mt-1">
+                   <span className="text-[10px] font-bold text-neutral-400 border border-neutral-600 rounded px-1 py-0.5 tracking-wider uppercase scale-90">
+                      {audioInfo.format}
+                   </span>
+                 </div>
+               )}
+             </div>
+
+             {/* Progress Bar Container */}
+             <div className="w-full max-w-[440px] mx-auto mb-6 flex items-center gap-3 text-xs font-medium text-white/50 font-mono">
+                 <span className="w-8 text-right">{formatTime(state.currentTime)}</span>
+                 
+                 <div className="flex-1 h-1 bg-white/10 rounded-full relative cursor-pointer overflow-visible group">
+                     <div 
+                        className="absolute top-0 left-0 h-full bg-white rounded-full"
+                        style={{ width: `${(state.currentTime / state.duration) * 100 || 0}%` }}
+                     ></div>
+                     {/* Handle */}
+                     <div 
+                        className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity intro-yScale"
+                        style={{ left: `${(state.currentTime / state.duration) * 100 || 0}%`, transform: 'translate(-50%, -50%)' }}
+                     ></div>
+                     
+                     <input
+                       type="range"
+                       min="0"
+                       max={state.duration || 0}
+                       step="0.1"
+                       value={state.currentTime}
+                       onChange={(e) => {
+                         const time = Number(e.target.value);
+                         if (audioRef.current) audioRef.current.currentTime = time;
+                         setState((prev) => ({ ...prev, currentTime: time }));
+                       }}
+                       className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-30"
+                     />
+                 </div>
+                 
+                 <span className="w-8 text-left">-{formatTime((state.duration || 0) - state.currentTime)}</span>
+             </div>
+
+             <div className="w-full max-w-[440px] mx-auto mt-2 flex items-center justify-between relative">
+                {/* Volume Control */}
+                <div className="flex-none relative">
+                    <button 
+                      onClick={() => setShowVolumePopup(!showVolumePopup)}
+                      onWheel={(e) => {
+                        const step = 0.05;
+                        const newVolume = volume + (e.deltaY < 0 ? step : -step);
+                        setVolume(Math.min(1, Math.max(0, newVolume)));
+                      }}
+                      className="text-white/50 hover:text-white transition-colors p-2"
+                      title="Volume (Scroll to adjust)"
+                    >
+                      {volume === 0 ? (
+                         <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73 4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>
+                      ) : volume < 0.5 ? (
+                         <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M18.5 12c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM5 9v6h4l5 5V4L9 9H5z"/></svg>
+                      ) : (
+                         <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L9 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+                      )}
+                    </button>
+                    
+                    {/* Volume Popup */}
+                    {showVolumePopup && (
+                      <>
+                        <div className="fixed inset-0 z-[100] cursor-default" onClick={(e) => { e.stopPropagation(); setShowVolumePopup(false); }}></div>
+                        
+                        <div 
+                          className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-40 h-10 bg-[#1e1e1e]/90 backdrop-blur-xl rounded-2xl flex items-center px-3 gap-2 z-[101] shadow-xl border border-white/5 popup-animate"
+                          onClick={(e) => e.stopPropagation()} 
+                        >
+                          <svg className="w-4 h-4 text-white/50" fill="currentColor" viewBox="0 0 24 24">
+                            {volume === 0 ? (
+                              <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73 4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>
+                            ) : (
+                              <path d="M3 9v6h4l5 5V4L9 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+                            )}
+                          </svg>
+
+                          <div className="relative flex-1 h-1 bg-white/20 rounded-full group">
+                              <div 
+                                  className="absolute top-0 left-0 h-full bg-white rounded-full"
+                                  style={{ width: `${volume * 100}%` }}
+                              ></div>
+                              <div 
+                                  className="absolute top-1/2 -translate-y-1/2 h-3 w-3 bg-white rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-opacity"
+                                  style={{ left: `${volume * 100}%`, transform: 'translate(-50%, -50%)' }}
+                              ></div>
+                              <input
+                                type="range"
+                                min="0"
+                                max="1"
+                                step="0.01"
+                                value={volume}
+                                onChange={(e) => setVolume(parseFloat(e.target.value))}
+                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                              />
+                          </div>
+                        </div>
+                      </>
+                    )}
+                </div>
+
+                {/* Center Controls */}
+                <div className="flex items-center justify-center gap-6">
+                  {/* Shuffle */}
+                  <button className="text-white/50 hover:text-white transition-colors p-2">
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></svg>
+                  </button>
+
+                  {/* Prev */}
+                  <button onClick={playPrevious} className="text-white hover:text-white/80 transition-colors p-2">
+                    <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" /></svg>
+                  </button>
+
+                  {/* Play/Pause */}
+                  <button 
+                    onClick={togglePlay} 
+                    className="text-white hover:scale-110 transition-transform p-2 drop-shadow-lg"
+                  >
+                    {state.isPlaying ? (
+                      <svg className="w-16 h-16" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+                    ) : (
+                      <svg className="w-16 h-16" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                    )}
+                  </button>
+
+                  {/* Next */}
+                  <button onClick={playNext} className="text-white hover:text-white/80 transition-colors p-2">
+                    <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" /></svg>
+                  </button>
+
+                  {/* Repeat */}
+                  <button className="text-white/50 hover:text-white transition-colors p-2">
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v6z"/></svg>
+                  </button>
+                </div>
+
+                {/* Lyrics/Queue Button */}
+                <div className="flex-none">
+                    <button 
+                      onClick={() => setShowLyrics(!showLyrics)}
+                      className={`transition-all duration-200 p-2 rounded-lg ${showLyrics ? 'text-white bg-white/10' : 'text-white/50 hover:text-white'}`}
+                      title={showLyrics ? "Hide Lyrics" : "Show Lyrics"}
+                    >
+                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z"/></svg>
+                    </button>
+                </div>
+             </div>
+          </div>
+        </div>
+          
+          {/* Right Side of Overlay: Lyrics */}
+          <div className={`md:flex h-full flex-col relative bg-transparent transition-[flex-basis,opacity,transform] duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] will-change-[flex-basis,opacity] transform-gpu ${showLyrics ? 'flex-[1_0_55%] opacity-100 translate-x-0' : 'flex-[0_0_0px] opacity-0 translate-x-10 overflow-hidden'}`}>
+
+
+             {isLoading ? (
+            <div className="h-full w-full flex flex-col items-center justify-center gap-6">
+              <div className="loading-spinner"></div>
+              <p className="text-xs uppercase tracking-[0.3em] text-white/40 font-medium">
+                Loading Lyrics
+              </p>
+            </div>
+          ) : state.lyrics.isSynced ? (
+            // Synced Lyrics View
+            <div
+              ref={lyricsContainerRef}
+              className="h-full w-full overflow-y-auto lyrics-scroll py-[35vh] px-6 md:px-12"
+              style={{ contentVisibility: 'auto', contain: 'layout paint' }}
+              onScroll={() => {
+                 // Detect user interaction vs auto-scroll
+                 // Note: This fires on auto-scroll too, but we can assume auto-scroll is handled by the useEffect which we might need to flag distinctively.
+                 // However, simpler approach: ANY scroll reveals for a bit. The auto-scroll happens frequently so it might keep it revealing?
+                 // Wait, if auto-scroll triggers this, then lyrics will ALWAYS be visible during playback.
+                 // We need to distinguish manual scroll.
+                 // Usually manual scroll sets 'pointer-events' or we can check if the scroll was programmatic.
+                 // BUT, the existing auto-scroll logic uses `container.scrollTo({ behavior: 'smooth' })`.
+                 
+                 // Better detection: Mouse enter/leave or Wheel event?
+                 // The user said "when user pulls down". This implies touch or wheel.
+                 // Let's use `onWheel` and `onTouchMove` to set the flag, instead of generic `onScroll`.
+                 // That way auto-scroll won't trigger it.
+              }}
+              onWheel={() => {
+                 setIsUserScrolling(true);
+                 if (userScrollTimeoutRef.current) clearTimeout(userScrollTimeoutRef.current);
+                 userScrollTimeoutRef.current = setTimeout(() => setIsUserScrolling(false), 2000);
+              }}
+              onTouchMove={() => {
+                 setIsUserScrolling(true);
+                 if (userScrollTimeoutRef.current) clearTimeout(userScrollTimeoutRef.current);
+                 userScrollTimeoutRef.current = setTimeout(() => setIsUserScrolling(false), 2000);
+              }}
+            >
+              {state.lyrics.synced.map((line, idx) => {
+                const distance = idx - activeLyricIndex;
+                const absDistance = Math.abs(distance);
+                const isActive = idx === activeLyricIndex;
+                const isNear1 = absDistance === 1;
+                const isNear2 = absDistance === 2;
+                
+                // Show ALL if scrolling, otherwise limited to 5 lines
+                const isVisible = isUserScrolling || (distance >= -2 && distance <= 2);
+
+                return (
+                  <div
+                    key={idx}
+                    onClick={() =>
+                      audioRef.current &&
+                      (audioRef.current.currentTime = line.time)
+                    }
+                    className={`lyric-item my-8 md:my-10 text-3xl md:text-4xl cursor-pointer select-none transition-all duration-500 ${
+                      isActive ? "active-lyric scale-110" : "scale-100"
+                    } ${isNear1 ? "near-active near-active-1" : ""} ${
+                      isNear2 ? "near-active near-active-2" : ""
+                    } ${!isVisible ? "opacity-0 blur-sm pointer-events-none" : ""}`}
+                    style={{ opacity: isVisible ? undefined : 0 }} 
+                  >
+                    {line.text || "♪"}
+                  </div>
+                );
+              })}
+            </div>
+          ) : hasLyrics ? (
+            // Plain Lyrics View
+            <div
+              ref={lyricsContainerRef}
+              className="h-full w-full overflow-y-auto lyrics-scroll py-10 px-6 md:px-12"
+            >
+              <div className="flex flex-col">
+                {state.lyrics.plain.map((line, idx) => (
+                  <div
+                    key={idx}
+                    className="plain-lyric text-base md:text-lg tracking-wide"
+                  >
+                    {line || <span className="text-white/20">♪</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            // No Lyrics
+            <div className="h-full flex flex-col items-center justify-center gap-4">
+              <svg
+                className="w-12 h-12 text-white/10"
+                fill="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z" />
+              </svg>
+              <p className="text-white/20 text-xs uppercase tracking-[0.3em]">
+                {state.file ? "No Lyrics Found" : "Select a Track"}
+              </p>
+            </div>
+          )}
           </div>
         </div>
 
         {/* Right Section: Lyrics List or Playlist or Albums or Artists */}
-        <div className="w-full md:w-[60%] relative flex flex-col bg-black">
+        {/* Main Background: Library */}
+        <div className="w-full h-full relative flex flex-col bg-transparent">
+          {/* Library Navigation Bar */}
+            <div className="w-full px-8 pt-8 pb-4 flex items-center justify-center relative z-30 shrink-0 border-b border-transparent">
+               {/* Tabs */}
+               <div className="flex items-center gap-12">
+
+                  <button 
+                    onClick={openPlaylist} 
+                    className={`text-sm font-bold uppercase tracking-[0.2em] hover:text-white transition-colors ${viewMode === 'playlist' ? 'text-white border-b-2 border-white pb-1' : 'text-white/40 border-b-2 border-transparent pb-1'}`}
+                  >
+                    Playlist
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setIsViewReady(false);
+                      if (currentSongAlbumKey) {
+                        setSelectedAlbum(currentSongAlbumKey);
+                        setViewMode("album-detail");
+                      } else {
+                        setSelectedAlbum(null);
+                        setViewMode("albums");
+                      }
+                      requestAnimationFrame(() => setIsViewReady(true));
+                    }}
+                    className={`text-sm font-bold uppercase tracking-[0.2em] hover:text-white transition-colors ${viewMode === 'albums' || viewMode === 'album-detail' ? 'text-white border-b-2 border-white pb-1' : 'text-white/40 border-b-2 border-transparent pb-1'}`}
+                  >
+                    Albums
+                  </button>
+                  <button 
+                    onClick={() => {
+                       setIsViewReady(false);
+                       if (currentSongArtist) {
+                         setSelectedArtist(currentSongArtist);
+                         setViewMode("artist-detail");
+                       } else {
+                         setSelectedArtist(null);
+                         setViewMode("artists");
+                       }
+                       requestAnimationFrame(() => setIsViewReady(true));
+                    }}
+                    className={`text-sm font-bold uppercase tracking-[0.2em] hover:text-white transition-colors ${viewMode === 'artists' || viewMode === 'artist-detail' ? 'text-white border-b-2 border-white pb-1' : 'text-white/40 border-b-2 border-transparent pb-1'}`}
+                  >
+                    Artists
+                  </button>
+               </div>
+               
+               {/* Actions */}
+               <div className="absolute right-8 flex items-center gap-4">
+                  {isElectron ? (
+                    <button onClick={handleElectronFolderSelect} className="text-white/40 hover:text-white transition-colors" title="Import Folder">
+                      <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
+                    </button>
+                  ) : (
+                    <label className="text-white/40 hover:text-white transition-colors cursor-pointer" title="Import Folder">
+                      <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
+                      <input type="file" // @ts-ignore
+                      webkitdirectory="" directory="" className="hidden" onChange={handleFolderChange} />
+                    </label>
+                  )}
+
+                  {isElectron ? (
+                    <button onClick={handleElectronFileSelect} className="text-white/40 hover:text-white transition-colors" title="Import Track">
+                      <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/></svg>
+                    </button>
+                  ) : (
+                    <label className="text-white/40 hover:text-white transition-colors cursor-pointer" title="Import Track">
+                       <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/></svg>
+                      <input type="file" accept="audio/*" className="hidden" onChange={handleFileChange} />
+                    </label>
+                  )}
+
+                  <button onClick={() => setShowApiKeyModal(true)} className="text-white/40 hover:text-white transition-colors" title="Settings">
+                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" /></svg>
+                  </button>
+               </div>
+            </div>
           {viewMode === "playlist" ? (
-            <div className="flex flex-col h-full">
-              <div className="w-full px-8 md:px-16 py-6 border-b border-white/10 bg-black z-20 shrink-0">
-                <h3 className="text-xs font-bold text-white/40 uppercase tracking-[0.3em]">
-                  Playlist ({playlistItems.length || state.playlist.length})
-                </h3>
-              </div>
+            <div className={`flex flex-col flex-1 min-h-0 content-visibility-auto transition-opacity duration-300 ${isRestoringLayout ? "opacity-0" : "opacity-100"}`}>
+              {!isRestoringLayout && (
               <div className="flex-1 w-full overflow-y-auto lyrics-scroll p-8 md:px-16">
                 <div ref={playlistContainerRef} className="flex flex-col gap-2">
                   {(playlistItems.length > 0
@@ -1159,15 +1517,12 @@ const App: React.FC = () => {
                     )}
                 </div>
               </div>
+              )}
             </div>
           ) : viewMode === "albums" ? (
             // Albums Grid View
-            <div className="flex flex-col h-full">
-              <div className="w-full px-8 md:px-16 py-6 border-b border-white/10 bg-black z-20 shrink-0">
-                <h3 className="text-xs font-bold text-white/40 uppercase tracking-[0.3em]">
-                  Albums ({albums.length})
-                </h3>
-              </div>
+            <div className={`flex flex-col flex-1 min-h-0 content-visibility-auto transition-opacity duration-300 ${isRestoringLayout ? "opacity-0" : "opacity-100"}`}>
+              {!isRestoringLayout && (
               <div className="flex-1 w-full overflow-y-auto lyrics-scroll p-8 md:px-16">
                 {!metadataLoaded && playlistItems.length > 0 ? (
                   <div className="flex flex-col items-center justify-center py-16 gap-4">
@@ -1261,11 +1616,12 @@ const App: React.FC = () => {
                   </div>
                 )}
               </div>
+              )}
             </div>
           ) : viewMode === "album-detail" && selectedAlbum ? (
             // Album Detail View
-            <div className="flex flex-col h-full">
-              <div className="w-full px-8 md:px-16 py-6 border-b border-white/10 bg-black z-20 shrink-0">
+            <div className="flex flex-col flex-1 min-h-0">
+              <div className="w-full px-8 md:px-16 py-6 border-b border-white/10 bg-black/20 backdrop-blur-md z-20 shrink-0">
                 <button
                   onClick={() => {
                     setIsViewReady(false);
@@ -1356,12 +1712,9 @@ const App: React.FC = () => {
             </div>
           ) : viewMode === "artists" ? (
             // Artists List View
-            <div className="flex flex-col h-full">
-              <div className="w-full px-8 md:px-16 py-6 border-b border-white/10 bg-black z-20 shrink-0">
-                <h3 className="text-xs font-bold text-white/40 uppercase tracking-[0.3em]">
-                  Artists {isViewReady ? `(${artists.length})` : ""}
-                </h3>
-              </div>
+            <div className={`flex flex-col flex-1 min-h-0 content-visibility-auto transition-opacity duration-300 ${isRestoringLayout ? "opacity-0" : "opacity-100"}`}>
+
+              {!isRestoringLayout && (
               <div className="flex-1 w-full overflow-y-auto lyrics-scroll p-8 md:px-16">
                 {!metadataLoaded && playlistItems.length > 0 ? (
                   <div className="flex flex-col items-center justify-center py-16 gap-4">
@@ -1461,11 +1814,12 @@ const App: React.FC = () => {
                   </div>
                 )}
               </div>
+              )}
             </div>
           ) : viewMode === "artist-detail" && selectedArtist ? (
             // Artist Detail View
-            <div className="flex flex-col h-full">
-              <div className="w-full px-8 md:px-16 py-6 border-b border-white/10 bg-black z-20 shrink-0">
+            <div className="flex flex-col flex-1 min-h-0">
+              <div className="w-full px-8 md:px-16 py-6 border-b border-white/10 bg-black/20 backdrop-blur-md z-20 shrink-0">
                 <button
                   onClick={() => {
                     setIsViewReady(false);
@@ -1580,118 +1934,31 @@ const App: React.FC = () => {
                 </div>
               </div>
             </div>
-          ) : isLoading ? (
-            <div className="h-full w-full flex flex-col items-center justify-center gap-6">
-              <div className="loading-spinner"></div>
-              <p className="text-xs uppercase tracking-[0.3em] text-white/40 font-medium">
-                Loading Lyrics
-              </p>
-            </div>
-          ) : state.lyrics.isSynced ? (
-            // Synced Lyrics View
-            <div
-              ref={lyricsContainerRef}
-              className="h-full w-full overflow-y-auto lyrics-scroll py-[35vh] px-6 md:px-12"
-            >
-              {state.lyrics.synced.map((line, idx) => {
-                const distance = idx - activeLyricIndex;
-                const absDistance = Math.abs(distance);
-                const isActive = idx === activeLyricIndex;
-                const isNear1 = absDistance === 1;
-                const isNear2 = absDistance === 2;
-                const isUpcoming = distance > 0 && distance <= 4;
-
-                return (
-                  <div
-                    key={idx}
-                    onClick={() =>
-                      audioRef.current &&
-                      (audioRef.current.currentTime = line.time)
-                    }
-                    className={`lyric-item text-lg md:text-2xl cursor-pointer select-none ${
-                      isActive ? "active-lyric" : ""
-                    } ${isNear1 ? "near-active near-active-1" : ""} ${
-                      isNear2 ? "near-active near-active-2" : ""
-                    } ${isUpcoming && !isNear1 && !isNear2 ? "upcoming" : ""}`}
-                  >
-                    {line.text || "♪"}
-                  </div>
-                );
-              })}
-            </div>
-          ) : hasLyrics ? (
-            // Plain Lyrics View
-            <div
-              ref={lyricsContainerRef}
-              className="h-full w-full overflow-y-auto lyrics-scroll py-10 px-6 md:px-12"
-            >
-              <div className="flex flex-col">
-                {state.lyrics.plain.map((line, idx) => (
-                  <div
-                    key={idx}
-                    className="plain-lyric text-base md:text-lg tracking-wide"
-                  >
-                    {line || <span className="text-white/20">♪</span>}
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : (
-            // No Lyrics
-            <div className="h-full flex flex-col items-center justify-center gap-4">
-              <svg
-                className="w-12 h-12 text-white/10"
-                fill="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z" />
-              </svg>
-              <p className="text-white/20 text-xs uppercase tracking-[0.3em]">
-                {state.file ? "No Lyrics Found" : "Select a Track"}
-              </p>
-            </div>
-          )}
-          {/* Enhanced Fade Overlays */}
-          {viewMode === "lyrics" && hasLyrics && (
-            <>
-              <div
-                className={`absolute top-0 left-0 w-full ${
-                  state.lyrics.isSynced ? "h-40" : "h-20"
-                } lyrics-fade-top pointer-events-none z-10`}
-              ></div>
-              <div
-                className={`absolute bottom-0 left-0 w-full ${
-                  state.lyrics.isSynced ? "h-40" : "h-20"
-                } lyrics-fade-bottom pointer-events-none z-10`}
-              ></div>
-            </>
-          )}
+          ) : null}
         </div>
       </main>
 
-      {/* Control Strip */}
-      <footer className="w-full border-t border-white/10 flex flex-col">
-        {/* Progress Bar - Optimized */}
-        <div className="w-full px-6 py-4 flex items-center gap-4">
-          <span className="text-[11px] font-mono text-white/50 w-10 text-right tabular-nums">
-            {formatTime(state.currentTime)}
-          </span>
-          <div className="progress-bar flex-1 h-1 bg-white/10 relative group cursor-pointer rounded-full">
-            <div
-              className="progress-bar-fill absolute top-0 left-0 h-full rounded-full transition-all duration-75 ease-linear"
-              style={{
-                width: `${(state.currentTime / state.duration) * 100 || 0}%`,
-              }}
-            ></div>
-            {/* Hover indicator */}
-            <div
-              className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-              style={{
-                left: `${(state.currentTime / state.duration) * 100 || 0}%`,
-                transform: "translate(-50%, -50%)",
-              }}
-            ></div>
-            <input
+
+
+
+      {/* Footer Player - Always rendered, stays behind Overlay */}
+      <footer 
+        onClick={(e) => {
+           // Expand to full screen if clicking outside controls
+           if ((e.target as HTMLElement).closest('button') || (e.target as HTMLElement).closest('input')) return;
+           setIsFullScreenPlayer(true);
+        }}
+        className={`w-full border-t border-white/10 flex flex-col glass-header bg-black/40 backdrop-blur-xl z-[70] transition-all duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] cursor-pointer hover:bg-black/50 ${isFullScreenPlayer ? '-translate-y-[100vh] opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'}`}
+      >
+        {/* Progress Bar - Top of footer */}
+        <div className="w-full px-0 -mt-1 h-2 group relative cursor-pointer">
+           <div className="absolute top-0 left-0 w-full h-1 bg-white/10 group-hover:h-1.5 transition-all duration-200">
+              <div 
+                className="h-full bg-white relative"
+                style={{ width: `${(state.currentTime / state.duration) * 100 || 0}%` }}
+              ></div>
+           </div>
+           <input
               type="range"
               min="0"
               max={state.duration || 0}
@@ -1701,125 +1968,99 @@ const App: React.FC = () => {
                 if (audioRef.current) audioRef.current.currentTime = time;
                 setState((prev) => ({ ...prev, currentTime: time }));
               }}
-              className="absolute top-1/2 -translate-y-1/2 left-0 w-full h-4 opacity-0 cursor-pointer z-10"
+              onClick={(e) => e.stopPropagation()}
+              className="absolute top-[-4px] left-0 w-full h-4 opacity-0 cursor-pointer z-20"
             />
-          </div>
-          <span className="text-[11px] font-mono text-white/50 w-10 tabular-nums">
-            {formatTime(state.duration)}
-          </span>
         </div>
 
-        <div className="flex w-full items-center border-t border-white/10">
-          {/* Playback Controls */}
-          <div className="p-4 border-r border-white/10 flex items-center justify-center gap-2">
-            {/* Previous Button */}
-            <button
-              onClick={playPrevious}
-              disabled={(playlistItems.length || state.playlist.length) === 0}
-              className="square-btn w-10 h-10 flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed"
-              title="Previous"
-            >
-              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" />
-              </svg>
-            </button>
-
-            {/* Play/Pause Button */}
-            <button
-              onClick={togglePlay}
-              className="play-btn w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300"
-            >
-              {state.isPlaying ? (
-                <svg
-                  className="w-5 h-5"
-                  fill="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <rect x="6" y="4" width="4" height="16" rx="1" />
-                  <rect x="14" y="4" width="4" height="16" rx="1" />
-                </svg>
-              ) : (
-                <svg
-                  className="w-5 h-5 ml-0.5"
-                  fill="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path d="M8 5v14l11-7z" />
-                </svg>
-              )}
-            </button>
-
-            {/* Next Button */}
-            <button
-              onClick={playNext}
-              disabled={(playlistItems.length || state.playlist.length) === 0}
-              className="square-btn w-10 h-10 flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed"
-              title="Next"
-            >
-              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" />
-              </svg>
-            </button>
+        <div className="flex w-full items-center justify-between px-6 py-3 h-20 gap-4">
+          {/* LEFT: Song Info (Apple Music Style) */}
+          <div className="flex items-center gap-4 w-[30%] min-w-0">
+             {/* Tiny Album Art */}
+             <div className="w-12 h-12 rounded-md shadow-lg overflow-hidden shrink-0 border border-white/10 bg-neutral-800 relative group">
+               {state.metadata.cover ? (
+                  <img src={state.metadata.cover} alt="" className="w-full h-full object-cover" />
+               ) : (
+                  <div className="w-full h-full flex items-center justify-center">
+                    <svg className="w-6 h-6 text-white/20" fill="currentColor" viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" /></svg>
+                  </div>
+               )}
+               {/* Expand Icon on Hover */}
+               <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                  <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M12 5.83L15.17 9l1.41-1.41L12 3 7.41 7.59 8.83 9 12 5.83zm0 12.34L8.83 15l-1.41 1.41L12 21l4.59-4.59L15.17 15 12 18.17z"/></svg> 
+               </div>
+             </div>
+             
+             {/* Text Info */}
+             <div className="flex flex-col min-w-0 justify-center">
+                <span className="font-bold text-white text-sm truncate leading-tight hover:underline cursor-pointer">
+                  {state.metadata.title || "Lumina Player"}
+                </span>
+                <span className="text-xs text-white/50 truncate font-medium hover:text-white/80 cursor-pointer">
+                  {state.metadata.artist || "Select a track"}
+                </span>
+             </div>
           </div>
 
-          <div className="px-6 flex-1 flex items-center justify-between text-[11px] font-medium tracking-wider text-white/40 uppercase">
-            <div className="flex items-center gap-2">
-              <span className="text-white/60 tabular-nums">
-                {(playlistItems.length || state.playlist.length) > 0
-                  ? `${state.currentSongIndex + 1} / ${
-                      playlistItems.length || state.playlist.length
-                    }`
-                  : "—"}
-              </span>
-              <span className="text-white/20">tracks</span>
-            </div>
-            <div className="flex items-center gap-3">
-              {audioInfo.format && (
-                <span className="text-amber-400/80 font-semibold">
+          {/* CENTER: Playback Controls */}
+          <div className="flex flex-col items-center justify-center w-[40%]">
+             <div className="flex items-center gap-6">
+                 {/* Previous */}
+                <button
+                  onClick={(e) => { e.stopPropagation(); playPrevious(); }}
+                  className="text-white/70 hover:text-white transition-colors p-2"
+                  disabled={(playlistItems.length || state.playlist.length) === 0}
+                >
+                  <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" /></svg>
+                </button>
+
+                {/* Play/Pause */}
+                <button
+                  onClick={(e) => { e.stopPropagation(); togglePlay(); }}
+                  className="w-10 h-10 bg-white text-black rounded-full flex items-center justify-center hover:scale-105 transition-transform shadow-lg shadow-white/10"
+                >
+                  {state.isPlaying ? (
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" /></svg>
+                  ) : (
+                    <svg className="w-5 h-5 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+                  )}
+                </button>
+
+                 {/* Next */}
+                <button
+                  onClick={(e) => { e.stopPropagation(); playNext(); }}
+                  className="text-white/70 hover:text-white transition-colors p-2"
+                  disabled={(playlistItems.length || state.playlist.length) === 0}
+                >
+                  <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" /></svg>
+                </button>
+             </div>
+          </div>
+
+          {/* RIGHT: Volume & Info */}
+          <div className="flex items-center justify-end gap-4 w-[30%] text-[10px] font-medium tracking-wider uppercase text-white/40">
+            {/* Format Badge (if exists) */}
+            {audioInfo.format && (
+                <div className="hidden lg:flex px-1.5 py-0.5 border border-white/20 rounded text-[9px] text-white/60">
                   {audioInfo.format}
-                </span>
-              )}
-              {audioInfo.bitrate && (
-                <span className="text-white/40">{audioInfo.bitrate} kbps</span>
-              )}
-              {state.lyrics.isSynced && (
-                <span className="flex items-center gap-1.5 text-emerald-400">
-                  <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse"></span>
-                  Synced
-                </span>
-              )}
-              {/* LDAC Indicator - Only if logic verified via AOSP Codec */}
-              {isLdacSupported && (
-                <div className="flex items-center gap-1 group cursor-help" title="LDAC High Quality Audio Active">
-                   <span className="text-[10px] font-bold tracking-widest text-[#ffd700] transition-colors duration-300">LDAC</span>
                 </div>
-              )}
-              <span className="hidden sm:inline text-white/30">
-                {state.isPlaying ? "Now Playing" : "Paused"}
-              </span>
+            )}
+            
+            {/* Volume Control */}
+            <div className="flex items-center gap-2 group" onClick={(e) => e.stopPropagation()}>
+              <svg className="w-4 h-4 text-white/40 group-hover:text-white/80 transition-colors" fill="currentColor" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" /></svg>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                defaultValue="0.8"
+                onChange={(e) => {
+                  if (audioRef.current) audioRef.current.volume = Number(e.target.value);
+                }}
+                className="w-20 md:w-24 accent-white h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
+              />
             </div>
-          </div>
-
-          <div className="hidden md:flex border-l border-white/10 items-center px-6 gap-3">
-            <svg
-              className="w-4 h-4 text-white/40"
-              fill="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
-            </svg>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.01"
-              defaultValue="0.8"
-              onChange={(e) => {
-                if (audioRef.current)
-                  audioRef.current.volume = Number(e.target.value);
-              }}
-              className="w-20 accent-white cursor-pointer"
-            />
           </div>
         </div>
       </footer>
