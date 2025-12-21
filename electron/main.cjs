@@ -580,56 +580,64 @@ ipcMain.handle("get-file-info", async (event, filePath) => {
   }
 });
 
-// Extract full metadata with cover art from file (using jsmediatags - reads only metadata, not entire file)
+// Extract full metadata with cover art from file (using music-metadata for duration support)
 ipcMain.handle("extract-metadata", async (event, filePath) => {
-  return new Promise((resolve) => {
+  try {
+    const mm = await import("music-metadata"); // Dynamic import for ESM
+    const metadata = await mm.parseFile(filePath);
+
+    const common = metadata.common;
+    const format = metadata.format;
+
     const name = path.basename(filePath);
     const nameWithoutExt = name.replace(/\.[^/.]+$/, "");
 
-    // Default metadata from filename
-    let defaultTitle = nameWithoutExt;
-    let defaultArtist = "Unknown Artist";
+    // Fallback logic
+    let title = common.title || nameWithoutExt;
+    let artist = common.artist || "Unknown Artist";
+    let album = common.album || "Unknown Album";
 
-    const dashMatch = nameWithoutExt.match(/^(.+?)\s*-\s*(.+)$/);
-    if (dashMatch) {
-      const first = dashMatch[1].trim();
-      const second = dashMatch[2].trim();
-      if (/^\d+$/.test(first)) {
-        defaultTitle = second;
-      } else {
-        defaultArtist = first;
-        defaultTitle = second;
+    // Parse filename if tags are missing
+    if (!common.title && !common.artist) {
+      const dashMatch = nameWithoutExt.match(/^(.+?)\s*-\s*(.+)$/);
+      if (dashMatch) {
+        const first = dashMatch[1].trim();
+        const second = dashMatch[2].trim();
+        if (/^\d+$/.test(first)) {
+          title = second;
+        } else {
+          artist = first;
+          title = second;
+        }
       }
     }
 
-    jsmediatags.read(filePath, {
-      onSuccess: (tag) => {
-        const tags = tag.tags;
-        let cover = undefined;
+    // Extract cover
+    let cover = undefined;
+    if (common.picture && common.picture.length > 0) {
+      const pic = common.picture[0];
+      const base64 = Buffer.from(pic.data).toString("base64");
+      cover = `data:${pic.format};base64,${base64}`;
+    }
 
-        // Extract cover art
-        if (tags.picture) {
-          const { data, format } = tags.picture;
-          const base64 = Buffer.from(data).toString("base64");
-          cover = `data:${format};base64,${base64}`;
-        }
+    return {
+      title,
+      artist,
+      album,
+      cover,
+      duration: format.duration, // Music-metadata provides duration in seconds
+    };
 
-        resolve({
-          title: tags.title || defaultTitle,
-          artist: tags.artist || defaultArtist,
-          album: tags.album || "Unknown Album",
-          cover: cover,
-        });
-      },
-      onError: (error) => {
-        console.error("Error reading metadata:", error);
-        resolve({
-          title: defaultTitle,
-          artist: defaultArtist,
-          album: "Unknown Album",
-          cover: undefined,
-        });
-      },
-    });
-  });
+  } catch (error) {
+    console.error("Error reading metadata with music-metadata:", error);
+    // Fallback to basic filename parsing
+    const name = path.basename(filePath);
+    return {
+      title: name.replace(/\.[^/.]+$/, ""),
+      artist: "Unknown Artist",
+      album: "Unknown Album",
+      cover: undefined,
+      duration: 0,
+    };
+  }
 });

@@ -19,6 +19,7 @@
     "discord-rpc": "^4.0.1",
     "dotenv": "^17.2.3",
     "jsmediatags": "^3.9.7",
+    "music-metadata": "^11.10.3",
     "react": "^19.2.3",
     "react-dom": "^19.2.3"
   },
