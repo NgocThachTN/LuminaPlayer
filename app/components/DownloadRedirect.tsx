@@ -47,28 +47,10 @@ export const DownloadRedirect: React.FC = () => {
       {/* Grid Pattern Overlay */}
       <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:40px_40px] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_50%,#000_70%,transparent_100%)] pointer-events-none"></div>
 
-      <div className="relative z-10 w-full max-w-7xl grid lg:grid-cols-2 gap-8 lg:gap-16 items-center">
+      <div className="relative z-10 w-full max-w-7xl grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-16 items-center">
          
-         {/* LEFT COLUMN: Hero Image */}
-         <div className="relative w-full group perspective-1000 animate-in slide-in-from-left-8 fade-in duration-1000 flex items-center justify-center lg:justify-end animate-float">
-            {/* Glow behind image */}
-            <div className="absolute -inset-4 bg-gradient-to-r from-blue-500/20 to-purple-500/20 blur-3xl opacity-50 group-hover:opacity-75 transition-opacity duration-500 rounded-[2rem]"></div>
-            
-            <img 
-              src={banner} 
-              alt="Lumina Player Preview" 
-              className="relative w-full max-w-xl lg:max-w-full rounded-xl shadow-2xl border border-white/10 transform transition-transform duration-500 hover:scale-[1.01] object-contain"
-            />
-            
-            {/* Reflective shine */}
-            <div className="absolute inset-0 rounded-xl bg-gradient-to-tr from-white/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"></div>
-         </div>
-
-         {/* RIGHT COLUMN: Content & Actions */}
-         <div className="flex flex-col items-center lg:items-start text-center lg:text-left space-y-8 animate-in slide-in-from-right-8 fade-in duration-1000 delay-200">
-            
-            {/* Title Section */}
-            <div className="space-y-4">
+         {/* ITEM 1: Title Section (Mobile: Top, Desktop: Right Top) */}
+         <div className="flex flex-col items-center lg:items-start text-center lg:text-left space-y-4 animate-in slide-in-from-right-8 fade-in duration-1000 delay-200 lg:col-start-2 lg:row-start-1">
                 <style>
                     {`
                     @keyframes gradient-x {
@@ -121,10 +103,25 @@ export const DownloadRedirect: React.FC = () => {
                     Your Local Music Sanctum
                 </p>
                 <div className="h-1 w-20 bg-gradient-to-r from-white/10 to-white/30 rounded-full mx-auto lg:mx-0 mt-6 lg:mt-8 animate-in width-in duration-1000 delay-500"></div>
-            </div>
+         </div>
 
-            {/* Action Card */}
-            <div className="w-full max-w-md animate-in slide-in-from-bottom-8 fade-in duration-1000 delay-500">
+         {/* ITEM 2: Hero Image (Mobile: Middle, Desktop: Left Spanning) */}
+         <div className="relative w-full group perspective-1000 animate-in slide-in-from-left-8 fade-in duration-1000 flex items-center justify-center lg:justify-end animate-float lg:col-start-1 lg:row-start-1 lg:row-span-2">
+            {/* Glow behind image */}
+            <div className="absolute -inset-4 bg-gradient-to-r from-blue-500/20 to-purple-500/20 blur-3xl opacity-50 group-hover:opacity-75 transition-opacity duration-500 rounded-[2rem]"></div>
+            
+            <img 
+              src={banner} 
+              alt="Lumina Player Preview" 
+              className="relative w-full max-w-xl lg:max-w-full rounded-xl shadow-2xl border border-white/10 transform transition-transform duration-500 hover:scale-[1.01] object-contain"
+            />
+            
+            {/* Reflective shine */}
+            <div className="absolute inset-0 rounded-xl bg-gradient-to-tr from-white/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"></div>
+         </div>
+
+         {/* ITEM 3: Action Card (Mobile: Bottom, Desktop: Right Bottom) */}
+         <div className="w-full max-w-md mx-auto lg:mx-0 animate-in slide-in-from-bottom-8 fade-in duration-1000 delay-500 lg:col-start-2 lg:row-start-2">
                 <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl p-6 md:p-8 flex flex-col gap-6 shadow-[0_8px_32px_rgba(0,0,0,0.5)] hover:bg-white/10 transition-colors duration-300">
                     
                     {!error && !downloadUrl ? (
@@ -188,7 +185,6 @@ export const DownloadRedirect: React.FC = () => {
                     )}
                 </div>
             </div>
-         </div>
       </div>
     </div>
   );
