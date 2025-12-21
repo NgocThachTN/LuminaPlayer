@@ -32,6 +32,8 @@ interface LibraryViewProps {
   // Transitions
   isRestoringLayout: boolean;
   setIsViewReady: (v: boolean) => void;
+  // Context Playback
+  onPlayContext: (item: PlaylistItem, index: number, contextParams: { type: 'playlist' | 'album' | 'artist', id?: string, items: PlaylistItem[] }) => void;
 }
 
 export const LibraryView: React.FC<LibraryViewProps> = ({
@@ -56,7 +58,8 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   handleFileChange,
   setShowApiKeyModal,
   isRestoringLayout,
-  setIsViewReady
+  setIsViewReady,
+  onPlayContext
 }) => {
   const playlistContainerRef = useRef<HTMLDivElement>(null);
   const albumsContainerRef = useRef<HTMLDivElement>(null);
@@ -518,7 +521,11 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                   {selectedAlbumTracks.map(({ item, idx }, i) => (
                     <div
                       key={idx}
-                      onClick={() => handleSongSelect(idx)}
+                      onClick={() => onPlayContext(item, idx, { 
+                        type: 'album', 
+                        id: selectedAlbum || '', 
+                        items: selectedAlbumTracks.map(t => t.item)
+                      })}
                       className={`playlist-item virtual-list-item p-4 rounded-lg cursor-pointer flex items-center gap-4 ${
                         idx === state.currentSongIndex ? "active" : ""
                       }`}
@@ -717,7 +724,11 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                   {selectedArtistTracks.map(({ item, idx }, i) => (
                     <div
                       key={idx}
-                      onClick={() => handleSongSelect(idx)}
+                      onClick={() => onPlayContext(item, idx, { 
+                        type: 'artist', 
+                        id: selectedArtist || '', 
+                        items: selectedArtistTracks.map(t => t.item)
+                      })}
                       className={`playlist-item virtual-list-item p-4 rounded-lg cursor-pointer flex items-center gap-4 ${
                         idx === state.currentSongIndex ? "active" : ""
                       }`}

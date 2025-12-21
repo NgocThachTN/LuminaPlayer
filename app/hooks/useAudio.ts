@@ -18,7 +18,7 @@ const toTitleCase = (str: string) => {
 export const useAudio = (
   state: SongState,
   setState: React.Dispatch<React.SetStateAction<SongState>>,
-  playlistItems: PlaylistItem[],
+  playlistItems: PlaylistItem[], // This is now the QUEUE
   volume: number,
   setAudioInfo: React.Dispatch<React.SetStateAction<{ format: string; bitrate: number | null }>>,
   setIsLoading: (loading: boolean) => void
@@ -207,7 +207,7 @@ export const useAudio = (
   };
 
   const playNext = () => {
-    const totalTracks = playlistItems.length || state.playlist.length;
+    const totalTracks = playlistItems.length; // Uses the passed 'queue'
     if (state.currentSongIndex < totalTracks - 1) {
       handleSongSelect(state.currentSongIndex + 1);
     } else {

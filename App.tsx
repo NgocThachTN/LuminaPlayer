@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { ApiKeyModal } from './components/ApiKeyModal';
 import { usePlayer } from './app/hooks/usePlayer';
 import { useLibrary } from './app/hooks/useLibrary';
@@ -33,22 +33,66 @@ const App: React.FC = () => {
     loadAllMetadata,
     toTitleCase
   } = useLibrary(state, setState, async (item, index) => {
-    // Forward reference issue: playSongFromItem is defined in useAudio which needs playlistItems
-    // Solution: pass a dummy or ref, OR restructure.
-    // Better: useAudio needs to be initialized.
-    // But useLibrary needs playSongFromItem to auto-play on import.
-    // Circular dependency.
-    // Resolution: Pass playSongFromItem REF or separate the play logic further.
-    // For now, let's keep it simple: define playSongFromItemWrapper here and pass it.
-    await audioHook.playSongFromItem(item, index);
+    // Import complete callback - auto play
+    // When importing, we reset the queue to the full playlist
+    // We need to access the LATEST playlistItems here.
+    // However, playlistItems is from the hook.
+    // We'll handle the "auto play first item" inside handleFileChange/FolderChange manually 
+    // effectively by updating the queue there if needed, OR we just let the user 
+    // click play.
+    // Actually, useLibrary calls this `playSongFromItem` fn.
+    // We can just update the queue here!
+    
+    // NOTE: This callback is essentially "play this item immediately".
+    // So we should set the queue to the current playlistItems (which includes the new files).
+    // BUT `playlistItems` in this scope might be stale during the callback execution?
+    // Let's rely on the fact that useLibrary updates state.playlistItems.
+    
+    // Simple fix: We will update the queue when `playlistItems` changes IF we are in "Default" mode?
+    // No, explicit action is better.
+    
+    // For now, let's just expose a way to set Queue.
+    // check handlePlayFromContext below.
   }, () => {
      uiHook.setViewMode('playlist');
      uiHook.setShowImportSuccess(true);
      setTimeout(() => uiHook.setShowImportSuccess(false), 3000);
   });
 
-  // 3. Audio Control
-  const audioHook = useAudio(state, setState, playlistItems, volume, setAudioInfo, setIsLoading);
+  // 2.5 Queue System
+  // The playback queue. defaults to all playlist items.
+  const [queue, setQueue] = React.useState<typeof playlistItems>([]);
+
+  // Sync queue with playlistItems ONLY when playlistItems changes AND 
+  // we haven't explicitly set a custom queue (like an album).
+  // actually, simplified: Initialize queue with playlistItems.
+  // When user clicks "All Songs" or imports, we reset queue to all items.
+  useEffect(() => {
+     // If the queue is empty or we just imported, sync it. 
+     // For now, let's just keep them in sync if we are in "Playlist" mode implicitly?
+     // No, explicit is better.
+     if (queue.length === 0 && playlistItems.length > 0) {
+        setQueue(playlistItems);
+     }
+  }, [playlistItems]);
+
+  // 3. Audio Control (Pass QUEUE instead of playlistItems)
+  const audioHook = useAudio(state, setState, queue, volume, setAudioInfo, setIsLoading);
+
+  // Helper: Handle playing from a specific context (Album/Artist/Playlist)
+  const handlePlayFromContext = (item: typeof playlistItems[0], index: number, contextParams: { type: 'playlist' | 'album' | 'artist', id?: string, items: typeof playlistItems }) => {
+    // 1. Update Queue
+    setQueue(contextParams.items);
+    
+    // 2. Play the song (using the index relative to the NEW queue)
+    // We need to find the index of 'item' in 'contextParams.items'
+    const newIndex = contextParams.items.indexOf(item);
+    if (newIndex >= 0) {
+      audioHook.playSongFromItem(item, newIndex);
+    } else {
+      console.warn("Song not found in context queue");
+    }
+  };
   
   // 4. Lyrics & Scroll
   const lyricsHook = useLyrics(state, audioHook.audioRef);
@@ -126,7 +170,10 @@ const App: React.FC = () => {
             artists={artists}
             metadataLoaded={metadataLoaded}
             state={state}
-            handleSongSelect={audioHook.handleSongSelect}
+            handleSongSelect={(index) => {
+              // Default playlist view selection (Global Context)
+              handlePlayFromContext(playlistItems[index], index, { type: 'playlist', items: playlistItems });
+            }}
             openPlaylist={uiHook.openPlaylist}
             selectedAlbum={uiHook.selectedAlbum}
             setSelectedAlbum={uiHook.setSelectedAlbum}
@@ -141,6 +188,8 @@ const App: React.FC = () => {
             setShowApiKeyModal={uiHook.setShowApiKeyModal}
             isRestoringLayout={uiHook.isRestoringLayout}
             setIsViewReady={uiHook.setIsViewReady}
+            // Context Playback Prop
+            onPlayContext={handlePlayFromContext}
          />
       </main>
 
@@ -148,7 +197,7 @@ const App: React.FC = () => {
       <FooterPlayer 
          state={state}
          audioInfo={audioInfo}
-         playlistCount={playlistItems.length || state.playlist.length}
+         playlistCount={queue.length} // Show Queue count now
          isFullScreenPlayer={uiHook.isFullScreenPlayer}
          setIsFullScreenPlayer={uiHook.setIsFullScreenPlayer}
          playPrevious={audioHook.playPrevious}

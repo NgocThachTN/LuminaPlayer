@@ -1,47 +1,28 @@
-import jsmediatags from 'jsmediatags';
+
 import { SongMetadata } from '../types';
 
+// Simplified Web Metadata Extraction (No external deps)
 export const extractMetadata = (file: File): Promise<SongMetadata> => {
   return new Promise((resolve) => {
-    jsmediatags.read(file, {
-      onSuccess: (tag) => {
-        const { tags } = tag;
-        let coverUrl = '';
+    // Basic filename parsing for Web Version
+    const filename = file.name.replace(/\.[^/.]+$/, "");
+    const parts = filename.split('-').map(p => p.trim());
+    
+    // Pattern: Artist - Title or 01 - Title
+    let title = (parts[1] || parts[0]).toUpperCase();
+    let artist = (parts[1] ? parts[0] : 'UNKNOWN ARTIST').toUpperCase();
+    
+    // Simple heuristic: if first part is number, it's track num, so second part is title
+    if (/^\d+$/.test(parts[0]) && parts[1]) {
+        title = parts[1].toUpperCase();
+        artist = 'UNKNOWN ARTIST';
+    }
 
-        if (tags.picture) {
-          const { data, format } = tags.picture;
-          let base64String = "";
-          for (let i = 0; i < data.length; i++) {
-            base64String += String.fromCharCode(data[i]);
-          }
-          coverUrl = `data:${format};base64,${window.btoa(base64String)}`;
-        }
-
-        // Fallback to filename parsing if title/artist are missing
-        const filename = file.name.replace(/\.[^/.]+$/, "");
-        const parts = filename.split('-').map(p => p.trim());
-        const fallbackTitle = (parts[1] || parts[0]).toUpperCase();
-        const fallbackArtist = (parts[1] ? parts[0] : 'UNKNOWN ARTIST').toUpperCase();
-
-        resolve({
-          title: tags.title ? tags.title.toUpperCase() : fallbackTitle,
-          artist: tags.artist ? tags.artist.toUpperCase() : fallbackArtist,
-          album: tags.album,
-          cover: coverUrl || `https://picsum.photos/seed/${filename}/1000/1000`
-        });
-      },
-      onError: (error) => {
-        console.error('Error reading tags:', error);
-        // Fallback to filename parsing
-        const filename = file.name.replace(/\.[^/.]+$/, "");
-        const parts = filename.split('-').map(p => p.trim());
-        
-        resolve({
-          title: (parts[1] || parts[0]).toUpperCase(),
-          artist: (parts[1] ? parts[0] : 'UNKNOWN ARTIST').toUpperCase(),
-          cover: `https://picsum.photos/seed/${filename}/1000/1000`
-        });
-      }
+    resolve({
+      title,
+      artist,
+      album: 'Unknown Album',
+      cover: undefined // No cover extraction in web version for now
     });
   });
 };

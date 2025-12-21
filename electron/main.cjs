@@ -1,7 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require("electron");
 const path = require("path");
 const fs = require("fs");
-const jsmediatags = require("jsmediatags");
+const crypto = require("crypto");
 const DiscordRPC = require("discord-rpc");
 require("dotenv").config({ path: path.join(__dirname, "../.env") });
 
@@ -83,6 +83,24 @@ function createProgressBar(current, total) {
 
 // Update Discord Rich Presence (Spotify-like style)
 // Cache for cover art to avoid redundant API calls
+// Cover Art Caching System
+const COVERS_DIR = path.join(app.getPath("userData"), "covers");
+if (!fs.existsSync(COVERS_DIR)) {
+  fs.mkdirSync(COVERS_DIR, { recursive: true });
+}
+
+// Helper: Generate unique hash for cover file based on path + mtime
+function getCoverHash(filePath) {
+  try {
+    const stats = fs.statSync(filePath);
+    const data = `${filePath}-${stats.mtimeMs}`;
+    return crypto.createHash("md5").update(data).digest("hex");
+  } catch (e) {
+    return null;
+  }
+}
+
+// Cache for cover art to avoid redundant API calls (Runtime memory cache for iTunes/Discord)
 const coverCache = new Map();
 
 // Helper: Fetch Cover Art from iTunes
@@ -301,21 +319,17 @@ ipcMain.handle("has-api-key", () => {
 // IPC handlers for playlist persistence
 ipcMain.handle("save-playlist", (event, items) => {
   const config = getConfig();
-  // Ensure we persist objects with metadata, but STRIP the cover art to save space
+  // Ensure we persist objects with metadata.
+  // Since cover art is now a file path (or URL), it is safe to persist it directly!
+  // No need to strip it excessively, though standard config practice suggests keeping it small.
+  // If 'cover' is a local file path, it's small string data.
   const persistedItems = items.map(item => {
     if (typeof item === 'string') return item; // Legacy support
-
-    // Create a safe copy of metadata without the large base64 cover string
-    let cleanMetadata = undefined;
-    if (item.metadata) {
-      const { cover, ...textMetadata } = item.metadata;
-      cleanMetadata = textMetadata;
-    }
 
     return {
       path: item.path,
       name: item.name,
-      metadata: cleanMetadata
+      metadata: item.metadata // Now includes 'cover' as string string path
     };
   });
 
@@ -584,7 +598,24 @@ ipcMain.handle("get-file-info", async (event, filePath) => {
 ipcMain.handle("extract-metadata", async (event, filePath) => {
   try {
     const mm = await import("music-metadata"); // Dynamic import for ESM
-    const metadata = await mm.parseFile(filePath);
+
+    // Check cache first
+    const coverHash = getCoverHash(filePath);
+    let coverPath = undefined;
+
+    if (coverHash) {
+      const cachedCoverPath = path.join(COVERS_DIR, `${coverHash}.jpg`);
+      if (fs.existsSync(cachedCoverPath)) {
+        coverPath = `file://${cachedCoverPath.replace(/\\/g, "/")}`;
+      }
+    }
+
+    // Optimization: If we have a cached cover, we might still want to read metadata for title/artist/duration
+    // options: skipCovers: true if we already have it? 
+    // music-metadata parses everything fast, but avoiding picture parsing helps.
+    // However, if we don't have the cover, we need to read it.
+
+    const metadata = await mm.parseFile(filePath, { skipCovers: !!coverPath });
 
     const common = metadata.common;
     const format = metadata.format;
@@ -612,20 +643,25 @@ ipcMain.handle("extract-metadata", async (event, filePath) => {
       }
     }
 
-    // Extract cover
-    let cover = undefined;
-    if (common.picture && common.picture.length > 0) {
-      const pic = common.picture[0];
-      const base64 = Buffer.from(pic.data).toString("base64");
-      cover = `data:${pic.format};base64,${base64}`;
+    // Process Cover if not cached
+    if (!coverPath && common.picture && common.picture.length > 0) {
+      try {
+        const pic = common.picture[0];
+        const buffer = Buffer.from(pic.data);
+        const cachedPath = path.join(COVERS_DIR, `${coverHash}.jpg`);
+        fs.writeFileSync(cachedPath, buffer);
+        coverPath = `file://${cachedPath.replace(/\\/g, "/")}`;
+      } catch (e) {
+        console.error("Failed to write cover cache:", e);
+      }
     }
 
     return {
       title,
       artist,
       album,
-      cover,
-      duration: format.duration, // Music-metadata provides duration in seconds
+      cover: coverPath, // Now returning file:// URL or undefined
+      duration: format.duration,
     };
 
   } catch (error) {
