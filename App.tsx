@@ -11,6 +11,7 @@ import {
   AlbumInfo,
   ArtistInfo,
   PlaylistItemMetadata,
+  SongMetadata,
 } from "./types";
 import { getLyrics } from "./services/geminiService";
 import { extractMetadata, resolveITunesCoverUrl } from "./services/metadataService";
@@ -651,10 +652,10 @@ const App: React.FC = () => {
     const loadMetadataAndLyrics = async () => {
       let finalTitle = metadataTitle;
       let finalArtist = metadataArtist;
-      let finalMetadata = {
+      let finalMetadata: SongMetadata = {
         title: metadataTitle,
         artist: metadataArtist,
-        cover: undefined as string | undefined,
+        cover: undefined,
       };
 
       // Extract metadata - use Electron IPC for path, or browser API for File
@@ -811,6 +812,29 @@ const App: React.FC = () => {
     state.isPlaying,
     state.currentSongIndex,
   ]);
+
+  // Media Session API (System Media Controls)
+  useEffect(() => {
+    if ("mediaSession" in navigator) {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: state.metadata.title,
+        artist: state.metadata.artist,
+        album: state.metadata.album || "Unknown Album",
+        artwork: state.metadata.cover
+          ? [{ src: state.metadata.cover, sizes: "512x512", type: "image/png" }]
+          : [],
+      });
+
+      navigator.mediaSession.setActionHandler("play", () => {
+        audioRef.current?.play();
+      });
+      navigator.mediaSession.setActionHandler("pause", () => {
+        audioRef.current?.pause();
+      });
+      navigator.mediaSession.setActionHandler("previoustrack", playPrevious);
+      navigator.mediaSession.setActionHandler("nexttrack", playNext);
+    }
+  }, [state.metadata, playPrevious, playNext]);
 
   // Clear Discord presence on unmount
   useEffect(() => {
@@ -1821,6 +1845,8 @@ const App: React.FC = () => {
           }
         }}
         onEnded={playNext}
+        onPlay={() => setState((prev) => ({ ...prev, isPlaying: true }))}
+        onPause={() => setState((prev) => ({ ...prev, isPlaying: false }))}
       />
 
       <ApiKeyModal
