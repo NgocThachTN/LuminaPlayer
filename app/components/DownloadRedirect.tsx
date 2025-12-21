@@ -39,7 +39,7 @@ export const DownloadRedirect: React.FC = () => {
   }, []);
 
   return (
-    <div className="min-h-screen relative flex items-center justify-center bg-[#050505] text-white font-[Outfit] overflow-hidden p-4 md:p-8 lg:p-16">
+    <div className="min-h-screen relative flex items-start lg:items-center justify-center bg-[#050505] text-white font-[Outfit] overflow-x-hidden p-4 py-12 md:p-8 lg:p-16">
        {/* Background Effects */}
       <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=2070&auto=format&fit=crop')] bg-cover bg-center opacity-30 blur-3xl scale-110 animate-breathe"></div>
       <div className="absolute inset-0 bg-gradient-to-t from-[#050505] via-[#050505]/90 to-[#050505]/40"></div>
