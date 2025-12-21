@@ -1,6 +1,6 @@
 # LuminaPlayer
 
-Minimalist music player with synchronized lyrics display.
+Minimalist music player with synchronized lyrics and high-res audio support.
 
 Windows App:
 
@@ -19,47 +19,62 @@ Discord Rich Presence:
 
 <img width="616" height="282" alt="image" src="https://github.com/user-attachments/assets/b50bd7c7-2fe6-4fbe-a7ec-426656aac251" />
 
-
 ## Features
 
-- **Local Library:** Import audio files or entire folders.
-- **Synced Lyrics:** Auto-fetch synchronized lyrics from [lrclib.net](https://lrclib.net).
-- **AI Lyrics Generation:** Gemini AI fallback for generating lyrics when not found online.
+- **Local Library:** Import audio files, folders, and manage them with persistent metadata.
+- **High-Res Audio:** **LDAC** software decoding support for high-fidelity Bluetooth playback on Windows.
+- **Context-Aware Playback:** Queue system allowing playback from specific Albums, Artists, or the Global Queue.
+- **Smart Metadata:** Background metadata extraction with **music-metadata**.
+- **Performance:** Optimized cover art caching (file-based) for instant library loading.
+- **Synced Lyrics:** Auto-fetch synchronized lyrics from [lrclib.net](https://lrclib.net) with Gemini AI fallback.
 - **Visualizer:** Real-time audio frequency visualizer.
 - **Discord Rich Presence:** Show your current track and playback status on Discord.
-- **Playlist Management:** Create and manage your music queue.
-- **Desktop Support:** Native Windows application via Electron.
 
 ## Tech Stack
 
 - **Frontend:** React 19 + TypeScript + Vite
 - **Styling:** Tailwind CSS
-- **Desktop:** Electron
-- **Metadata:** jsmediatags (ID3 metadata extraction)
-- **Integrations:** Discord RPC (Rich Presence)
+- **Desktop:** Electron (IPC architecture)
+- **Audio Processing:** 
+    - `music-metadata` (Metadata & Duration)
+    - Custom Native LDAC Module
+- **Storage:** File-based cover caching & JSON configuration
+
+## Project Structure
+
+```text
+electron/
+  main.cjs               # Main Process (IPC, Metadata, File System)
+  preload.cjs            # Preload script
+app/
+  components/            # React UI components (Library, Player, Visualizer)
+  hooks/                 # Custom Hooks (useAudio, useLibrary, useLyrics)
+  services/              # Services (Gemini, Metadata Fallback)
+  App.tsx                # Main Application Logic
+native/
+  ldac/                  # LDAC Codec Integration
+```
 
 ## Run Locally
 
 **Prerequisites:** Node.js (v18+)
 
 1. Install dependencies:
-
    ```bash
    npm install
    ```
 
-2. Create `.env` and add your API KEY
-
+2. Create `.env` and add your keys (Optional):
    ```env
-  DISCORD_CLIENT_ID= YOUR_API_KEY(If you want to build yours activity in discord)
+   DISCORD_CLIENT_ID=YOUR_CLIENT_ID_HERE
    ```
 
-3. Run the app:
+3. Run the app (Development Mode):
    ```bash
    npm run dev
+   # To launch Electron window:
+   npm run electron:dev
    ```
-
-App runs at `http://localhost:5173`
 
 ## Build Desktop App
 
@@ -70,16 +85,3 @@ npm run electron:build:win
 ```
 
 The installer will be generated in the `release/` folder.
-
-## Project Structure
-
-```text
-App.tsx                 # Main UI component
-types.ts                # TypeScript interfaces
-services/
-  geminiService.ts      # Lyrics fetching (lrclib + Gemini)
-  metadataService.ts    # ID3 tag extraction
-  discordService.ts     # Discord Rich Presence activity management
-components/
-  Visualizer.tsx        # Audio frequency visualizer
-```
