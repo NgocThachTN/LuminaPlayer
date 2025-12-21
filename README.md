@@ -4,6 +4,9 @@ Minimalist music player with synchronized lyrics display.
 
 Windows App:
 
+<img width="1829" height="961" alt="image" src="https://github.com/user-attachments/assets/910bd4d3-eaea-4813-84ed-6cd14a04121c" />
+
+
 <img width="1919" height="1021" alt="image" src="https://github.com/user-attachments/assets/e6f61917-6524-42d4-99c3-8c153498b448" />
 
 
