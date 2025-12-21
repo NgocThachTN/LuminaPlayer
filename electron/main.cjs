@@ -358,11 +358,11 @@ ipcMain.handle("ldac-available", async () => {
   const instance = new LdacEncoderClass(679, 0, 0x01, 0, 44100);
 
   // Explicitly use the codec file checks as requested
-  if (!instance.constructor.checkCapability()) {
+  if (!instance.constructor.verifySonyAOSPCore()) {
     console.warn("[LDAC CHECK] Failed: Codec Engine verification failed");
     return false;
   }
-  console.log("[LDAC CHECK] Step 1: Codec Engine (ldac.js) Verified.");
+  console.log("[LDAC CHECK] Step 1: Codec Engine (ldac.js) Verified AOSP Standards.");
 
   // 2. Check if a Bluetooth Audio Device is actually connected
   // STRICT CHECK: If not Bluetooth, return FALSE immediately.

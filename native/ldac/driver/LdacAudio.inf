@@ -1,0 +1,48 @@
+; LdacAudio.inf
+; LDAC Bluetooth Audio Driver for Windows
+; Copyright (c) 2025 Lumina Player
+
+[Version]
+Signature="$WINDOWS NT$"
+Class=MEDIA
+ClassGUID={4d36e96c-e325-11ce-bfc1-08002be10318}
+Provider=%ProviderName%
+DriverVer=12/20/2025,1.0.0.0
+CatalogFile=LdacAudio.cat
+
+[Manufacturer]
+%ProviderName%=Standard,NTamd64
+
+[Standard.NTamd64]
+%DeviceDesc%=LdacAudio, BTHENUM\{0000110B-0000-1000-8000-00805F9B34FB}
+
+[SourceDisksNames]
+1 = %DiskName%,,,""
+
+[SourceDisksFiles]
+LdacAudio.sys = 1
+
+[DestinationDirs]
+DefaultDestDir = 12
+
+[LdacAudio.NT]
+CopyFiles = Drivers_Dir
+
+[Drivers_Dir]
+LdacAudio.sys
+
+[LdacAudio.NT.Services]
+AddService = LdacAudio, 0x00000002, LdacAudio_Service_Inst
+
+[LdacAudio_Service_Inst]
+DisplayName    = %LdacAudio.SvcDesc%
+ServiceType    = 1               ; SERVICE_KERNEL_DRIVER
+StartType      = 3               ; SERVICE_DEMAND_START
+ErrorControl   = 1               ; SERVICE_ERROR_NORMAL
+ServiceBinary  = %12%\LdacAudio.sys
+
+[Strings]
+ProviderName = "Lumina Code"
+DiskName = "LDAC Audio Driver Installation Disk"
+DeviceDesc = "Lumina LDAC Bluetooth Audio"
+LdacAudio.SvcDesc = "Lumina LDAC Bluetooth Audio Service"

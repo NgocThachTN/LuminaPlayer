@@ -1,0 +1,1 @@
+Write-Host " Injecting LDAC Registry Keys...\; New-ItemProperty -Path \HKLM:\SYSTEM\CurrentControlSet\Services\BthA2dp\Parameters\ -Name \UseAltCodecs\ -Value 1 -PropertyType DWORD -Force; Write-Host \Patching Bluetooth Stack... Success.\;
