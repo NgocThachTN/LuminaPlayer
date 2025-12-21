@@ -82,36 +82,78 @@ function createProgressBar(current, total) {
 }
 
 // Update Discord Rich Presence (Spotify-like style)
-function updateDiscordPresence(data) {
+// Cache for cover art to avoid redundant API calls
+const coverCache = new Map();
+
+// Helper: Fetch Cover Art from iTunes
+async function fetchCoverArt(title, artist) {
+  const key = `${title}-${artist}`;
+  if (coverCache.has(key)) return coverCache.get(key);
+
+  try {
+    const query = encodeURIComponent(`${artist} ${title}`);
+    const response = await fetch(`https://itunes.apple.com/search?term=${query}&media=music&limit=1`);
+    const data = await response.json();
+
+    if (data.resultCount > 0 && data.results[0].artworkUrl100) {
+      const url = data.results[0].artworkUrl100.replace('100x100bb', '600x600bb');
+      coverCache.set(key, url);
+      // Limit cache size
+      if (coverCache.size > 50) {
+        const firstKey = coverCache.keys().next().value;
+        coverCache.delete(firstKey);
+      }
+      return url;
+    }
+  } catch (e) {
+    console.error("Cover Fetch Error:", e);
+  }
+  return null;
+}
+
+// Update Discord Rich Presence (Spotify-like style)
+async function updateDiscordPresence(data) {
   if (!rpc || !rpcReady) return;
 
   try {
     const artist = data.artist || "Unknown Artist";
     const title = data.title || "Unknown Track";
-    const currentTime = data.currentTime || 0;
-    const duration = data.duration || 0;
 
-    if (data.isPlaying) {
-      rpc.setActivity({
-        details: title,
-        state: `by ${artist} • Playing`,
-        largeImageKey: "lumina_icon",
-        largeImageText: "Lumina Music Player",
-        smallImageKey: "playing",
-        smallImageText: "Playing",
-        instance: false,
-      });
-    } else {
-      rpc.setActivity({
-        details: title,
-        state: `by ${artist} • Paused`,
-        largeImageKey: "lumina_icon",
-        largeImageText: "Lumina Music Player",
-        smallImageKey: "paused",
-        smallImageText: "Paused",
-        instance: false,
-      });
+    // Attempt to fetch cover art dynamically
+    let largeImageKey = "lumina_icon"; // Default asset
+    if (title && artist !== "Unknown Artist") {
+      // Note: Check existing data.cover first in case provided by renderer
+      if (data.cover) {
+        largeImageKey = data.cover;
+      } else {
+        const fetchedUrl = await fetchCoverArt(title, artist);
+        if (fetchedUrl) largeImageKey = fetchedUrl;
+      }
     }
+
+    // Activity Object
+    const activity = {
+      details: title,
+      state: `by ${artist}`,
+      largeImageKey: largeImageKey,
+      largeImageText: "Lumina Music Player",
+      smallImageKey: data.isPlaying ? "playing" : "paused",
+      smallImageText: data.isPlaying ? "Playing" : "Paused",
+      instance: false,
+    };
+
+    // Add timestamps? (Optional, makes it look better)
+    if (data.isPlaying && data.duration) {
+      // Calculate end time
+      // data.currentTime is where we are NOW.
+      // So endTimestamp = Date.now() + (remaining * 1000)
+      const remaining = data.duration - data.currentTime;
+      if (remaining > 0) {
+        activity.endTimestamp = Date.now() + remaining * 1000;
+      }
+    }
+
+    rpc.setActivity(activity);
   } catch (err) {
     console.error("Error updating Discord presence:", err);
   }

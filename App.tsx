@@ -13,7 +13,7 @@ import {
   PlaylistItemMetadata,
 } from "./types";
 import { getLyrics } from "./services/geminiService";
-import { extractMetadata } from "./services/metadataService";
+import { extractMetadata, resolveITunesCoverUrl } from "./services/metadataService";
 import { Visualizer } from "./components/Visualizer";
 import { ApiKeyModal } from "./components/ApiKeyModal";
 import { LazyImage } from "./components/LazyImage";
@@ -778,6 +778,8 @@ const App: React.FC = () => {
     if (!isElectron || !window.electronAPI?.updateDiscordPresence) return;
 
     const audio = audioRef.current;
+    
+    // 1. Initial immediate update (default icon)
     window.electronAPI.updateDiscordPresence({
       title: state.metadata.title,
       artist: state.metadata.artist,
@@ -785,6 +787,24 @@ const App: React.FC = () => {
       currentTime: audio?.currentTime || 0,
       duration: audio?.duration || state.duration,
     });
+    
+    // 2. Async fetch for Cover Art (public URL for Discord)
+    if (state.metadata.title && state.metadata.artist !== "Unknown Artist") {
+       resolveITunesCoverUrl(state.metadata.title, state.metadata.artist).then(url => {
+         if (url) {
+            // Update again with specific cover
+            window.electronAPI!.updateDiscordPresence({
+              title: state.metadata.title,
+              artist: state.metadata.artist,
+              isPlaying: state.isPlaying,
+              currentTime: audio?.currentTime || 0,
+              duration: audio?.duration || state.duration,
+              cover: url
+            });
+         }
+       });
+    }
+
   }, [
     state.metadata.title,
     state.metadata.artist,

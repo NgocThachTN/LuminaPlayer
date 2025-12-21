@@ -43,6 +43,7 @@ interface DiscordPresenceData {
   isPlaying: boolean;
   currentTime?: number;
   duration?: number;
+  cover?: string;
 }
 
 declare global {
