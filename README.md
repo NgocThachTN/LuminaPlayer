@@ -1,6 +1,7 @@
 # LuminaPlayer
 
 Minimalist music player with synchronized lyrics and high-res audio support.
+
 <img src="assets/banner.png" width="100%">
 
 Windows App:
