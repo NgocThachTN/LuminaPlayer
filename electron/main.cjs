@@ -134,9 +134,12 @@ async function updateDiscordPresence(data) {
     // Activity Object
     const activity = {
       details: title,
-      state: `by ${artist}`,
+      state: `by ${artist} • ${data.isPlaying ? "Playing" : "Paused"}`,
       largeImageKey: largeImageKey,
-      largeImageText: "Lumina Music Player",
+      largeImageText: data.album || "Lumina Music Player",
+      // If we use a URL for the Large Image, we should ideally use a URL for the Small Image too 
+      // or Discord might fail to render the small asset key over the large web image.
+      // For now, let's trust the text status restoration is the main fix.
       smallImageKey: data.isPlaying ? "playing" : "paused",
       smallImageText: data.isPlaying ? "Playing" : "Paused",
       instance: false,
