@@ -14,22 +14,26 @@ Windows App:
 
 ## Features
 
-- Import audio files or folders
-- Auto-fetch synced lyrics from lrclib.net
-- Gemini AI fallback for lyrics generation (option)
-- Real-time audio visualizer
-- Playlist management
+- **Local Library:** Import audio files or entire folders.
+- **Synced Lyrics:** Auto-fetch synchronized lyrics from [lrclib.net](https://lrclib.net).
+- **AI Lyrics Generation:** Gemini AI fallback for generating lyrics when not found online.
+- **Visualizer:** Real-time audio frequency visualizer.
+- **Discord Rich Presence:** Show your current track and playback status on Discord.
+- **Playlist Management:** Create and manage your music queue.
+- **Desktop Support:** Native Windows application via Electron.
 
 ## Tech Stack
 
-- React 19 + TypeScript + Vite
-- Tailwind CSS (CDN)
-- jsmediatags (ID3 metadata)
-- Google Gemini AI
+- **Frontend:** React 19 + TypeScript + Vite
+- **Styling:** Tailwind CSS
+- **Desktop:** Electron
+- **Metadata:** jsmediatags (ID3 metadata extraction)
+- **AI Integration:** Google Gemini AI
+- **Integrations:** Discord RPC (Rich Presence)
 
 ## Run Locally
 
-**Prerequisites:** Node.js
+**Prerequisites:** Node.js (v18+)
 
 1. Install dependencies:
 
@@ -39,8 +43,8 @@ Windows App:
 
 2. Create `.env.local` and add your Gemini API key:
 
-   ```
-   GEMINI_API_KEY=your_key_here
+   ```env
+   VITE_GEMINI_API_KEY=your_key_here
    ```
 
 3. Run the app:
@@ -62,12 +66,13 @@ The installer will be generated in the `release/` folder.
 
 ## Project Structure
 
-```
+```text
 App.tsx                 # Main UI component
 types.ts                # TypeScript interfaces
 services/
   geminiService.ts      # Lyrics fetching (lrclib + Gemini)
   metadataService.ts    # ID3 tag extraction
+  discordService.ts     # Discord Rich Presence activity management
 components/
   Visualizer.tsx        # Audio frequency visualizer
 ```
