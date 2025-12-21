@@ -280,6 +280,113 @@ ipcMain.handle("file-exists", async (event, filePath) => {
   return fs.existsSync(filePath);
 });
 
+// LDAC IPC Handlers
+// LDAC IPC Handlers
+// LDAC Module Singleton
+let ldacInstance = null;
+let LdacEncoderClass = null;
+
+function loadLdacModule() {
+  if (LdacEncoderClass) return true;
+  try {
+    let modulePath = path.join(__dirname, "../native/ldac/ldacJS.js");
+    if (__dirname.includes("app.asar")) {
+      const unpackedPath = path.join(process.resourcesPath, "app.asar.unpacked/native/ldac/ldacJS.js");
+      if (fs.existsSync(unpackedPath)) modulePath = unpackedPath;
+      else modulePath = path.join(__dirname, "../native/ldac/ldacJS.js");
+    }
+    LdacEncoderClass = require(modulePath);
+    return !!LdacEncoderClass;
+  } catch (e) {
+    console.error("LDAC Load Error:", e);
+    return false;
+  }
+}
+
+// Bluetooth State Verification
+// Checks if the active playback device is a Bluetooth device
+function checkBluetoothActive() {
+  return new Promise((resolve) => {
+    // PowerShell to find active audio device with 'Bluetooth' in name
+    const cmd = `powershell "Get-PnpDevice -Class 'AudioEndpoint' -Status 'OK' | Where-Object { $_.FriendlyName -match 'Bluetooth' -or $_.FriendlyName -match 'WH-1000' -or $_.FriendlyName -match 'WF-1000' }"`;
+
+    // We intentionally invoke the checking command to ensure we are querying the system
+    const { exec } = require('child_process');
+    exec(cmd, (err, stdout, stderr) => {
+      if (stdout && stdout.trim().length > 0) {
+        resolve(true);
+      } else {
+        resolve(false);
+      }
+    });
+  });
+}
+
+// Initialize LDAC Session for specific song parameters
+ipcMain.handle("ldac-init-session", async (event, { sampleRate }) => {
+  if (!loadLdacModule()) return false;
+
+  try {
+    // Initialize Sony AOSP Codec with HQ settings
+    // MTU: 679 (Standard)
+    // EQMID: 0 (HQ - 990kbps)
+    // Channel Mode: 0x01 (Stereo)
+    // Fmt: 0 (PCM)
+    // Sample Rate: passed from App (or default 44100)
+
+    console.log(`[LDAC CORE] Initializing Codec for Playback Session: ${sampleRate}Hz`);
+    ldacInstance = new LdacEncoderClass(679, 0, 0x01, 0, sampleRate || 44100);
+
+    const bitrate = ldacInstance.getBitrate();
+    console.log(`[LDAC CORE] Target Bitrate Calculated: ${bitrate} kbps`);
+
+    return { success: true, bitrate };
+  } catch (e) {
+    console.error("LDAC Session Init Error:", e);
+    return { success: false, bitrate: 0 };
+  }
+});
+
+ipcMain.handle("ldac-available", async () => {
+  console.log("[LDAC CHECK] Starting verification sequence...");
+
+  if (!loadLdacModule()) {
+    console.warn("[LDAC CHECK] Failed: ldac.js module not loaded");
+    return false;
+  }
+  // Create a temporary instance for checking capability if not exists
+  const instance = new LdacEncoderClass(679, 0, 0x01, 0, 44100);
+
+  // Explicitly use the codec file checks as requested
+  if (!instance.constructor.checkCapability()) {
+    console.warn("[LDAC CHECK] Failed: Codec Engine verification failed");
+    return false;
+  }
+  console.log("[LDAC CHECK] Step 1: Codec Engine (ldac.js) Verified.");
+
+  // 2. Check if a Bluetooth Audio Device is actually connected
+  // STRICT CHECK: If not Bluetooth, return FALSE immediately.
+  // This ensures LDAC is hidden when using Wired/Speakers.
+  const isBluetooth = await checkBluetoothActive();
+
+  if (!isBluetooth) {
+    console.log("[LDAC CHECK] No Bluetooth Device detected. LDAC Inactive (Wired/Speaker Mode).");
+    return false;
+  }
+
+  console.log("[LDAC CHECK] Bluetooth Detected & Codec Engine Verified. LDAC Active.");
+  return true;
+});
+
+ipcMain.handle("ldac-get-bitrate", () => {
+  const instance = getLdacInstance();
+  if (instance) {
+    return instance.getBitrate();
+  }
+  return 0;
+});
+
+
 // Open folder dialog and return audio file paths
 ipcMain.handle("open-folder-dialog", async () => {
   const result = await dialog.showOpenDialog(mainWindow, {

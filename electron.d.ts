@@ -32,6 +32,7 @@ interface ElectronAPI {
   // Discord Rich Presence
   updateDiscordPresence: (data: DiscordPresenceData) => Promise<boolean>;
   clearDiscordPresence: () => Promise<boolean>;
+  checkLdacSupport: () => Promise<boolean>;
   
   isElectron: boolean;
 }

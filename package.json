@@ -40,7 +40,8 @@
     },
     "files": [
       "dist/**/*",
-      "electron/**/*"
+      "electron/**/*",
+      "native/**/*"
     ],
     "win": {
       "target": [

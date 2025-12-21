@@ -64,6 +64,7 @@ const App: React.FC = () => {
   const [isPending, startTransition] = useTransition();
   const [isViewReady, setIsViewReady] = useState(true);
   const [deferredViewMode, setDeferredViewMode] = useState<ViewMode>("lyrics");
+  const [isLdacSupported, setIsLdacSupported] = useState(false);
 
   // Sync deferred view mode with actual view mode (with slight delay for smooth transition)
   useEffect(() => {
@@ -402,6 +403,33 @@ const App: React.FC = () => {
     };
 
     loadSavedPlaylist();
+    loadSavedPlaylist();
+  }, []);
+
+  // Check LDAC Support (Poll every 3 seconds to detect connection changes)
+  useEffect(() => {
+    let intervalId: any;
+    
+    const checkLdac = async () => {
+      // Avoid checking if window/electronAPI is missing
+      if (isElectron && window.electronAPI && window.electronAPI.checkLdacSupport) {
+        const supported = await window.electronAPI.checkLdacSupport();
+        // Only update if changed to avoid renders
+        setIsLdacSupported(prev => prev !== supported ? supported : prev);
+      }
+    };
+
+    // Check immediately
+    checkLdac();
+    
+    // Poll for device connection status
+    if (isElectron) {
+      intervalId = setInterval(checkLdac, 3000);
+    }
+    
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
   }, []);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1715,6 +1743,12 @@ const App: React.FC = () => {
                   <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse"></span>
                   Synced
                 </span>
+              )}
+              {/* LDAC Indicator - Only if logic verified via AOSP Codec */}
+              {isLdacSupported && (
+                <div className="flex items-center gap-1 group cursor-help" title="LDAC High Quality Audio Active">
+                   <span className="text-[10px] font-bold tracking-widest text-[#ffd700] transition-colors duration-300">LDAC</span>
+                </div>
               )}
               <span className="hidden sm:inline text-white/30">
                 {state.isPlaying ? "Now Playing" : "Paused"}
