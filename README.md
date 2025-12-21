@@ -36,7 +36,6 @@ Discord Rich Presence:
 - **Styling:** Tailwind CSS
 - **Desktop:** Electron
 - **Metadata:** jsmediatags (ID3 metadata extraction)
-- **AI Integration:** Google Gemini AI
 - **Integrations:** Discord RPC (Rich Presence)
 
 ## Run Locally
@@ -49,10 +48,10 @@ Discord Rich Presence:
    npm install
    ```
 
-2. Create `.env.local` and add your Gemini API key:
+2. Create `.env` and add your API KEY
 
    ```env
-   VITE_GEMINI_API_KEY=your_key_here
+  DISCORD_CLIENT_ID= YOUR_API_KEY(If you want to build yours activity in discord)
    ```
 
 3. Run the app:
@@ -60,7 +59,7 @@ Discord Rich Presence:
    npm run dev
    ```
 
-App runs at `http://localhost:3000`
+App runs at `http://localhost:5173`
 
 ## Build Desktop App
 
