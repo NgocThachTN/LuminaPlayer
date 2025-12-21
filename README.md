@@ -12,6 +12,10 @@ Windows App:
 <img width="1919" height="1020" alt="image" src="https://github.com/user-attachments/assets/860d3b90-d9bd-4e47-aecd-d3d0e13a432d" />
 
 
+Discord Rich Presence:
+
+<img width="624" height="296" alt="image" src="https://github.com/user-attachments/assets/0645db5e-9881-4410-a237-84ecc1b78070" />
+
 ## Features
 
 - **Local Library:** Import audio files or entire folders.
