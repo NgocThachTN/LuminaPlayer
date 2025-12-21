@@ -210,6 +210,26 @@
         .playlist-item.active::before {
             transform: scaleY(1);
         }
+        /* New Compact Playing Indicator */
+        .playing-indicator-v2 {
+            display: flex;
+            gap: 2px;
+            align-items: flex-end;
+            height: 10px;
+        }
+        .playing-indicator-v2 span {
+            width: 2px;
+            background: #f1c40f;
+            border-radius: 1px;
+            animation: equalizer-v2 0.8s ease-in-out infinite;
+        }
+        .playing-indicator-v2 span:nth-child(1) { animation-delay: 0s; }
+        .playing-indicator-v2 span:nth-child(2) { animation-delay: 0.2s; }
+        .playing-indicator-v2 span:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes equalizer-v2 {
+            0%, 100% { height: 3px; }
+            50% { height: 10px; }
+        }
         /* Progress bar glow */
         .progress-bar {
             position: relative;

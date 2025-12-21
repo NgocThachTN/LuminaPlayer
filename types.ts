@@ -49,4 +49,5 @@ export interface PlaylistItemMetadata {
   artist: string;
   album: string;
   cover?: string;
+  duration?: number;
 }

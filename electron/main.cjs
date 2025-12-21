@@ -299,9 +299,27 @@ ipcMain.handle("has-api-key", () => {
 });
 
 // IPC handlers for playlist persistence
-ipcMain.handle("save-playlist", (event, filePaths) => {
+ipcMain.handle("save-playlist", (event, items) => {
   const config = getConfig();
-  config.playlist = filePaths;
+  // Ensure we persist objects with metadata, but STRIP the cover art to save space
+  const persistedItems = items.map(item => {
+    if (typeof item === 'string') return item; // Legacy support
+
+    // Create a safe copy of metadata without the large base64 cover string
+    let cleanMetadata = undefined;
+    if (item.metadata) {
+      const { cover, ...textMetadata } = item.metadata;
+      cleanMetadata = textMetadata;
+    }
+
+    return {
+      path: item.path,
+      name: item.name,
+      metadata: cleanMetadata
+    };
+  });
+
+  config.playlist = persistedItems;
   saveConfig(config);
   return true;
 });
