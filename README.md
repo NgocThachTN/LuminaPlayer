@@ -2,16 +2,12 @@
 
 Minimalist music player with synchronized lyrics display.
 
-Website:
-
-<img width="1919" height="953" alt="image" src="https://github.com/user-attachments/assets/14ee219b-022c-4915-b45a-428e49681f48" />
-
-
-
 Windows App:
 
-<img width="1919" height="1018" alt="image" src="https://github.com/user-attachments/assets/0a23fc13-c9e6-46e6-ae8d-fb0bf499a435" />
+<img width="1919" height="1021" alt="image" src="https://github.com/user-attachments/assets/e6f61917-6524-42d4-99c3-8c153498b448" />
 
+
+<img width="1919" height="1020" alt="image" src="https://github.com/user-attachments/assets/20046ac9-113d-4691-b6ed-99a3354f69ec" />
 
 
 Discord Rich Presence:
