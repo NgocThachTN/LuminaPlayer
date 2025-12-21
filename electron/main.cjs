@@ -6,39 +6,64 @@ const DiscordRPC = require("discord-rpc");
 
 // Discord Rich Presence Configuration
 // Create your app at: https://discord.com/developers/applications
+// Discord Rich Presence Configuration
+// Create your app at: https://discord.com/developers/applications
 const DISCORD_CLIENT_ID = "1451554863283703989"; // Replace with your Discord Application ID
 let rpc = null;
 let rpcReady = false;
+let rpcRetryTimeout = null;
+let lastPresence = null; // Cache for reconnection
 
-// Initialize Discord RPC
+// Initialize Discord RPC with Auto-Reconnection
 function initDiscordRPC() {
   try {
     DiscordRPC.register(DISCORD_CLIENT_ID);
-    rpc = new DiscordRPC.Client({ transport: "ipc" });
 
-    rpc.on("ready", () => {
-      console.log("Discord RPC Connected!");
-      rpcReady = true;
+    const connect = () => {
+      // Clean up previous instance
+      if (rpc) {
+        try { rpc.destroy(); } catch (_) { }
+        rpc = null;
+      }
 
-      // Set initial presence
-      rpc.setActivity({
-        details: "Idle",
-        state: "Not playing anything",
-        largeImageKey: "lumina_icon",
-        largeImageText: "Lumina Music Player",
-        instance: false,
+      rpc = new DiscordRPC.Client({ transport: "ipc" });
+
+      rpc.on("ready", () => {
+        console.log("Discord RPC Connected!");
+        rpcReady = true;
+
+        // Restore last known presence upon connection
+        if (lastPresence && lastPresence.isPlaying) {
+          updateDiscordPresence(lastPresence);
+        } else {
+          rpc.setActivity({
+            details: "Idle",
+            state: "Not playing anything",
+            largeImageKey: "lumina_icon",
+            largeImageText: "Lumina Music Player",
+            instance: false,
+          });
+        }
       });
-    });
 
-    rpc.on("disconnected", () => {
-      console.log("Discord RPC Disconnected");
-      rpcReady = false;
-    });
+      rpc.on("disconnected", () => {
+        console.log("Discord RPC Disconnected. Retrying in 5s...");
+        rpcReady = false;
 
-    rpc.login({ clientId: DISCORD_CLIENT_ID }).catch((err) => {
-      console.error("Failed to connect to Discord:", err.message);
-      rpcReady = false;
-    });
+        if (rpcRetryTimeout) clearTimeout(rpcRetryTimeout);
+        rpcRetryTimeout = setTimeout(connect, 5000);
+      });
+
+      rpc.login({ clientId: DISCORD_CLIENT_ID }).catch((err) => {
+        // Discord likely not running
+        rpcReady = false;
+
+        if (rpcRetryTimeout) clearTimeout(rpcRetryTimeout);
+        rpcRetryTimeout = setTimeout(connect, 5000);
+      });
+    };
+
+    connect();
   } catch (err) {
     console.error("Discord RPC initialization error:", err);
   }
@@ -94,6 +119,7 @@ function updateDiscordPresence(data) {
 
 // Clear Discord Rich Presence
 function clearDiscordPresence() {
+  lastPresence = null;
   if (rpc && rpcReady) {
     try {
       rpc.clearActivity();
@@ -178,6 +204,9 @@ app.whenReady().then(() => {
 
 app.on("window-all-closed", () => {
   clearDiscordPresence();
+
+  if (rpcRetryTimeout) clearTimeout(rpcRetryTimeout);
+
   if (rpc) {
     rpc.destroy();
   }
@@ -194,6 +223,7 @@ app.on("activate", () => {
 
 // IPC handler for Discord Rich Presence
 ipcMain.handle("update-discord-presence", (event, data) => {
+  lastPresence = data; // Cache for reconnection
   updateDiscordPresence(data);
   return true;
 });
