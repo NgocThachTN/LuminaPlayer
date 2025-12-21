@@ -280,69 +280,6 @@ ipcMain.handle("file-exists", async (event, filePath) => {
   return fs.existsSync(filePath);
 });
 
-// LDAC IPC Handlers
-// LDAC IPC Handlers
-// LDAC Module Singleton
-let ldacInstance = null;
-function getLdacInstance() {
-  if (ldacInstance) return ldacInstance;
-  try {
-    let modulePath = path.join(__dirname, "../native/ldac");
-    if (__dirname.includes("app.asar")) {
-      if (fs.existsSync(path.join(process.resourcesPath, "app.asar.unpacked/native/ldac"))) {
-        modulePath = path.join(process.resourcesPath, "app.asar.unpacked/native/ldac");
-      } else {
-        modulePath = path.join(__dirname, "../native/ldac");
-      }
-    }
-    const native = require(modulePath);
-    if (native && native.LdacEncoder) {
-      // Initialize HQ (990kbps) by default
-      ldacInstance = new native.LdacEncoder(679, 0, 0, 2, 44100);
-    }
-    return ldacInstance;
-  } catch (e) {
-    console.error("LDAC Init Failed:", e);
-    return null;
-  }
-}
-
-// Bluetooth State Verification
-// Checks if the active playback device is a Bluetooth device
-function checkBluetoothActive() {
-  return new Promise((resolve) => {
-    // PowerShell to find active audio device with 'Bluetooth' in name
-    // This is robust on Windows 10/11
-    const cmd = `powershell "Get-PnpDevice -Class 'AudioEndpoint' -Status 'OK' | Where-Object { $_.FriendlyName -match 'Bluetooth' -or $_.FriendlyName -match 'WH-1000' -or $_.FriendlyName -match 'WF-1000' }"`;
-
-    // Note: A perfect check requires CoreAudio API inspection for the 'Active' property
-    // For this JS level integration, we'll check if a known Bluetooth endpoint exists and is engaged.
-    // Simpler heuristic: Toggle LDAC only if user explicitly requested connection or we simulate it correctly.
-
-    // For now, to answer the user's request: "Disable if not Bluetooth":
-    // We will assume that if the user hits "Disconnect", the OS handles it.
-    // But to update the UI, we'll rely on a flag or assume standard behavior:
-    // This function returns TRUE for now to keep the feature visible, 
-    // but in a production app you'd watch the 'devicechange' event.
-
-    resolve(true);
-  });
-}
-
-ipcMain.handle("ldac-available", async () => {
-  // Only return TRUE if the native module is loaded AND (Optional logic)
-  return !!getLdacInstance();
-});
-
-ipcMain.handle("ldac-get-bitrate", () => {
-  const instance = getLdacInstance();
-  if (instance) {
-    return instance.getBitrate();
-  }
-  return 0;
-});
-
-
 // Open folder dialog and return audio file paths
 ipcMain.handle("open-folder-dialog", async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
