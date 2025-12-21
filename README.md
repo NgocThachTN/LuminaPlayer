@@ -12,7 +12,8 @@ Windows App:
 
 Discord Rich Presence:
 
-<img width="624" height="296" alt="image" src="https://github.com/user-attachments/assets/0645db5e-9881-4410-a237-84ecc1b78070" />
+<img width="616" height="282" alt="image" src="https://github.com/user-attachments/assets/b50bd7c7-2fe6-4fbe-a7ec-426656aac251" />
+
 
 ## Features
 
