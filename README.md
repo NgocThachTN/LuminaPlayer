@@ -13,8 +13,6 @@ Windows App:
 
 <img width="1919" height="1020" alt="image" src="https://github.com/user-attachments/assets/20046ac9-113d-4691-b6ed-99a3354f69ec" />
 
-<img width="1919" height="1021" alt="image" src="https://github.com/user-attachments/assets/d8ead2d7-7cc2-41b6-a2f0-36e5069b3cc4" />
-
 
 Discord Rich Presence:
 
