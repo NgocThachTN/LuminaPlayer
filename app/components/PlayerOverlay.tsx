@@ -79,32 +79,11 @@ export const PlayerOverlay: React.FC<PlayerOverlayProps> = ({
     ensureDarkColor(dominantColor, 0.2) || '#171717',
   [dominantColor]);
 
-  // Scroll to active line when opening lyrics
+  // Scroll to active line when opening lyrics - instant scroll to prevent jump
   React.useLayoutEffect(() => {
     if (showLyrics && scrollToActiveLine && autoScrollEnabled) {
-       let animationFrameId: number;
-       const startTime = performance.now();
-       const duration = 600; // Match transition duration
-
-       const animateScroll = (currentTime: number) => {
-          const elapsed = currentTime - startTime;
-          
-          // Continuously snap to correct position as layout expands
-          scrollToActiveLine(true);
-
-          if (elapsed < duration) {
-             animationFrameId = requestAnimationFrame(animateScroll);
-          } else {
-             // Final smooth adjustment
-             scrollToActiveLine(false);
-          }
-       };
-
-       animationFrameId = requestAnimationFrame(animateScroll);
-
-       return () => {
-         cancelAnimationFrame(animationFrameId);
-       };
+       // Scroll instantly when opening to prevent visual jump
+       scrollToActiveLine(true); // true = instant
     }
   }, [showLyrics, scrollToActiveLine, autoScrollEnabled]);
 
@@ -133,8 +112,8 @@ export const PlayerOverlay: React.FC<PlayerOverlayProps> = ({
          <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/></svg>
        </button>
 
-       {/* Left Column Wrapper */}
-       <div className={`h-full flex flex-col relative bg-transparent z-20 transition-[flex-basis,transform] duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] will-change-[flex-basis] transform-gpu items-center justify-center ${showLyrics ? 'w-full md:flex-[0_0_45%]' : 'w-full md:flex-[1_0_100%]'}`}>
+       {/* Left Column Wrapper - smooth scale transition */}
+       <div className={`h-full flex flex-col relative bg-transparent z-20 transform-gpu transition-transform duration-300 ease-out items-center justify-center ${showLyrics ? 'w-full md:flex-[0_0_45%] scale-[0.98]' : 'w-full md:flex-[1_0_100%] scale-100'}`}>
 
       {/* Top: Album Art */}
       <div className="w-full flex-none flex items-center justify-center p-8 pb-10">
@@ -343,9 +322,9 @@ export const PlayerOverlay: React.FC<PlayerOverlayProps> = ({
       </div>
     </div>
       
-      {/* Right Side of Overlay: Lyrics */}
-      <div className={`md:flex h-full flex-col relative bg-transparent transition-[flex-basis] duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] will-change-[flex-basis] overflow-hidden ${showLyrics ? 'flex-[1_0_55%]' : 'flex-[0_0_0px]'}`}>
-        <div className={`h-full w-full transition-[opacity,transform] duration-700 ease-out delay-100 transform-gpu will-change-[opacity,transform] ${showLyrics ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
+      {/* Right Side of Overlay: Lyrics - smooth fade and scale */}
+      <div className={`md:flex h-full flex-col relative bg-transparent transform-gpu overflow-hidden ${showLyrics ? 'flex-[1_0_55%]' : 'flex-[0_0_0px]'}`}>
+        <div className={`h-full w-full transform-gpu transition-all duration-300 ease-out ${showLyrics ? 'opacity-100 translate-x-0 scale-100' : 'opacity-0 translate-x-8 scale-95'}`}>
 
 
 
