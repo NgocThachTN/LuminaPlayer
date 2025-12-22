@@ -257,7 +257,11 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                       ? playlistItems
                       : state.playlist.map((f) => ({ file: f, name: f.name }))
                     ).map((item, idx) => {
-                      const isPlaying = idx === state.currentSongIndex;
+                      const currentSong = state.playlist[state.currentSongIndex];
+                      const isPlaying = currentSong && (
+                        (item.path && item.path === currentSong.path) ||
+                        (item.name === currentSong.name)
+                      );
                       const duration = item.metadata?.duration;
                       const formatDuration = (d?: number) => {
                         if (!d) return "--:--";

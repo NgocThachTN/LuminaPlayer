@@ -2,6 +2,7 @@
 import React from 'react';
 import { SongState, SongMetadata } from '../types';
 import { ensureDarkColor } from '../../services/colorService';
+import { LyricsView } from './LyricsView';
 
 interface PlayerOverlayProps {
   state: SongState;
@@ -29,12 +30,20 @@ interface PlayerOverlayProps {
   setIsUserScrolling: (v: boolean) => void;
   userScrollTimeoutRef: React.MutableRefObject<NodeJS.Timeout | null>;
   isLoading: boolean;
+  scrollToActiveLine: () => void;
   
   // UI helpers
   setViewMode: (mode: any) => void;
   setIsRestoringLayout: (v: boolean) => void;
   viewMode: string;
 }
+
+// Helper outside component
+const formatTime = (time: number) => {
+  const mins = Math.floor(time / 60);
+  const secs = Math.floor(time % 60);
+  return `${mins}:${secs.toString().padStart(2, "0")}`;
+};
 
 export const PlayerOverlay: React.FC<PlayerOverlayProps> = ({
   state,
@@ -60,23 +69,33 @@ export const PlayerOverlay: React.FC<PlayerOverlayProps> = ({
   setIsUserScrolling,
   userScrollTimeoutRef,
   isLoading,
+  scrollToActiveLine,
   setViewMode,
   setIsRestoringLayout,
   viewMode
 }) => {
-  const formatTime = (time: number) => {
-    const mins = Math.floor(time / 60);
-    const secs = Math.floor(time % 60);
-    return `${mins}:${secs.toString().padStart(2, "0")}`;
-  };
 
-  const hasLyrics = state.lyrics.synced.length > 0 || state.lyrics.plain.length > 0;
+  const bgColor = React.useMemo(() => 
+    ensureDarkColor(dominantColor, 0.2) || '#171717',
+  [dominantColor]);
+
+  // Scroll to active line when opening lyrics
+  React.useEffect(() => {
+    if (showLyrics && scrollToActiveLine) {
+       // Small timeout to allow layout transition to complete/start
+       setTimeout(() => {
+         scrollToActiveLine();
+       }, 100);
+       // Also try immediately just in case
+       scrollToActiveLine();
+    }
+  }, [showLyrics, scrollToActiveLine]);
 
   return (
     <>
     <div 
       className={`fixed inset-0 z-[60] flex flex-col md:flex-row transition-transform duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] ${isFullScreenPlayer ? 'translate-y-0' : 'translate-y-full'}`}
-      style={{ backgroundColor: ensureDarkColor(dominantColor, 0.2) || '#171717' }} 
+      style={{ backgroundColor: bgColor }} 
     >
        {/* Collapse Button */}
        <button 
@@ -308,94 +327,24 @@ export const PlayerOverlay: React.FC<PlayerOverlayProps> = ({
     </div>
       
       {/* Right Side of Overlay: Lyrics */}
-      <div className={`md:flex h-full flex-col relative bg-transparent transition-[flex-basis,opacity,transform] duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] will-change-[flex-basis,opacity] transform-gpu ${showLyrics ? 'flex-[1_0_55%] opacity-100 translate-x-0' : 'flex-[0_0_0px] opacity-0 translate-x-10 overflow-hidden'}`}>
+      <div className={`md:flex h-full flex-col relative bg-transparent transition-[flex-basis] duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] will-change-[flex-basis] overflow-hidden ${showLyrics ? 'flex-[1_0_55%]' : 'flex-[0_0_0px]'}`}>
+        <div className={`h-full w-full transition-[opacity,filter,transform] duration-700 ease-out delay-100 transform-gpu will-change-[opacity,filter,transform] ${showLyrics ? 'opacity-100 blur-0 scale-100' : 'opacity-0 blur-md scale-95'}`}>
 
 
-         {isLoading ? (
-        <div className="h-full w-full flex flex-col items-center justify-center gap-6">
-          <div className="loading-spinner"></div>
-          <p className="text-xs uppercase tracking-[0.3em] text-white/40 font-medium">
-            Loading Lyrics
-          </p>
-        </div>
-      ) : state.lyrics.isSynced ? (
-        // Synced Lyrics View
-        <div
-          ref={lyricsContainerRef}
-          className="h-full w-full overflow-y-auto lyrics-scroll py-[35vh] px-6 md:px-12"
-          style={{ contentVisibility: 'auto', contain: 'layout paint' }}
-          onWheel={() => {
-             setIsUserScrolling(true);
-             if (userScrollTimeoutRef.current) clearTimeout(userScrollTimeoutRef.current);
-             userScrollTimeoutRef.current = setTimeout(() => setIsUserScrolling(false), 2000);
-          }}
-          onTouchMove={() => {
-             setIsUserScrolling(true);
-             if (userScrollTimeoutRef.current) clearTimeout(userScrollTimeoutRef.current);
-             userScrollTimeoutRef.current = setTimeout(() => setIsUserScrolling(false), 2000);
-          }}
-        >
-          {state.lyrics.synced.map((line, idx) => {
-            const distance = idx - activeLyricIndex;
-            const absDistance = Math.abs(distance);
-            const isActive = idx === activeLyricIndex;
-            const isNear1 = absDistance === 1;
-            const isNear2 = absDistance === 2;
-            
-            // Show ALL if scrolling, otherwise limited to 5 lines
-            const isVisible = isUserScrolling || (distance >= -2 && distance <= 2);
 
-            return (
-              <div
-                key={idx}
-                onClick={() =>
-                  audioRef.current &&
-                  (audioRef.current.currentTime = line.time)
-                }
-                className={`lyric-item my-8 md:my-10 text-3xl md:text-4xl cursor-pointer select-none transition-all duration-500 ${
-                  isActive ? "active-lyric scale-110" : "scale-100"
-                } ${isNear1 ? "near-active near-active-1" : ""} ${
-                  isNear2 ? "near-active near-active-2" : ""
-                } ${!isVisible ? "opacity-0 blur-sm pointer-events-none" : ""}`}
-                style={{ opacity: isVisible ? undefined : 0 }} 
-              >
-                {line.text || "♪"}
-              </div>
-            );
-          })}
+          <LyricsView 
+            lyrics={state.lyrics}
+            isLoading={isLoading}
+            activeLyricIndex={activeLyricIndex}
+            isUserScrolling={isUserScrolling}
+            setIsUserScrolling={setIsUserScrolling}
+            userScrollTimeoutRef={userScrollTimeoutRef}
+            lyricsContainerRef={lyricsContainerRef}
+            audioRef={audioRef}
+            file={state.file}
+          />
+
         </div>
-      ) : hasLyrics ? (
-        // Plain Lyrics View
-        <div
-          ref={lyricsContainerRef}
-          className="h-full w-full overflow-y-auto lyrics-scroll py-10 px-6 md:px-12"
-        >
-          <div className="flex flex-col">
-            {state.lyrics.plain.map((line, idx) => (
-              <div
-                key={idx}
-                className="plain-lyric text-base md:text-lg tracking-wide"
-              >
-                {line || <span className="text-white/20">♪</span>}
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : (
-        // No Lyrics
-        <div className="h-full flex flex-col items-center justify-center gap-4">
-          <svg
-            className="w-12 h-12 text-white/10"
-            fill="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z" />
-          </svg>
-          <p className="text-white/20 text-xs uppercase tracking-[0.3em]">
-            {state.file ? "No Lyrics Found" : "Select a Track"}
-          </p>
-        </div>
-      )}
       </div>
     </div>
     </>

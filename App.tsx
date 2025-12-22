@@ -79,12 +79,17 @@ const App: React.FC = () => {
   // 3. Audio Control (Pass QUEUE instead of playlistItems)
   const audioHook = useAudio(state, setState, queue, volume, setAudioInfo, setIsLoading);
 
-  // Helper: Handle playing from a specific context (Album/Artist/Playlist)
   const handlePlayFromContext = (item: typeof playlistItems[0], index: number, contextParams: { type: 'playlist' | 'album' | 'artist', id?: string, items: typeof playlistItems }) => {
     // 1. Update Queue
     setQueue(contextParams.items);
     
-    // 2. Play the song (using the index relative to the NEW queue)
+    // 2. Sync state.playlist so indices match the playing queue
+    setState(prev => ({
+      ...prev,
+      playlist: contextParams.items
+    }));
+    
+    // 3. Play the song (using the index relative to the NEW queue)
     // We need to find the index of 'item' in 'contextParams.items'
     const newIndex = contextParams.items.indexOf(item);
     if (newIndex >= 0) {
@@ -159,6 +164,7 @@ const App: React.FC = () => {
             setViewMode={uiHook.setViewMode}
             setIsRestoringLayout={uiHook.setIsRestoringLayout}
             viewMode={uiHook.viewMode}
+            scrollToActiveLine={lyricsHook.scrollToActiveLine}
          />
 
          {/* Library View (Playlist, Albums, Artists) */}
