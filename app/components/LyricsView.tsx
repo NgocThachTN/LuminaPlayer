@@ -41,8 +41,8 @@ export const LyricsView = memo(({
     return (
       <div
         ref={lyricsContainerRef}
-        className="h-full w-full overflow-y-auto lyrics-scroll py-[35vh] px-6 md:px-12"
-        style={{ contentVisibility: 'auto', contain: 'layout paint' }}
+        className="h-full w-full overflow-y-auto lyrics-scroll py-[35vh] px-6 md:px-12 relative will-change-scroll"
+        style={{ maskImage: 'linear-gradient(to bottom, transparent 0%, black 10%, black 85%, transparent 100%)', WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 10%, black 85%, transparent 100%)' }}
         onWheel={() => {
            setIsUserScrolling(true);
            if (userScrollTimeoutRef.current) clearTimeout(userScrollTimeoutRef.current);
@@ -56,19 +56,58 @@ export const LyricsView = memo(({
       >
         {lyrics.synced.map((line, idx) => {
           const distance = idx - activeLyricIndex;
-          // Optimization: Simple checks first
           const isActive = idx === activeLyricIndex;
-          
-          // Show ALL if scrolling, otherwise limit visible range for optimization if simpler view is needed, 
-          // but the original code had this logic. Note: The logic `!isVisible` with `opacity: 0` 
-          // keeps them in DOM but invisible. 
-          // To strictly match original logic:
-          const isVisible = isUserScrolling || (distance >= -2 && distance <= 2);
-          
-          // Replicate classes
-          const absDistance = Math.abs(distance);
-          const isNear1 = absDistance === 1;
-          const isNear2 = absDistance === 2;
+          const isPast = idx < activeLyricIndex;
+
+          let opacityClass = "opacity-0";
+          let blurClass = "blur-0";
+          let scaleClass = "scale-95";
+          let pointerEvents = "pointer-events-none";
+
+          if (isUserScrolling) {
+             const absDist = Math.abs(distance);
+             if (absDist <= 1) opacityClass = "opacity-100";
+             else if (absDist <= 3) opacityClass = "opacity-75"; 
+             else opacityClass = "opacity-40";
+             
+             scaleClass = "scale-100";
+             pointerEvents = "pointer-events-auto";
+          } else {
+             const isStart = activeLyricIndex === -1;
+             // Allow 4 lines if start, otherwise 3
+             const maxFutureLines = isStart ? 4 : 3;
+
+             if (isActive) {
+                 opacityClass = "opacity-100";
+                 scaleClass = "scale-110";
+                 pointerEvents = "pointer-events-auto";
+                 blurClass = "blur-0";
+             } else if (distance === -1) {
+                 // The line just passed - Blur it out as it fades
+                 opacityClass = "opacity-0"; 
+                 scaleClass = "scale-95";
+                 blurClass = "blur-sm"; // Reduced from blur-lg for better performance while keeping effect
+             } else if (distance > 0 && distance <= maxFutureLines) {
+                 if (distance === 1) {
+                    opacityClass = isStart ? "opacity-100" : "opacity-80";
+                    blurClass = isStart ? "blur-0" : "blur-[0.5px]";
+                    if (isStart) scaleClass = "scale-105"; // Highlight first line at start
+                 } else if (distance === 2) {
+                    opacityClass = isStart ? "opacity-80" : "opacity-60";
+                    blurClass = isStart ? "blur-[0.5px]" : "blur-[1px]";
+                 } else if (distance === 3) {
+                    opacityClass = isStart ? "opacity-60" : "opacity-40";
+                    blurClass = isStart ? "blur-[1px]" : "blur-[1.5px]";
+                 } else { // distance 4 (only if isStart)
+                    opacityClass = "opacity-40";
+                    blurClass = "blur-[1.5px]";
+                 }
+                 
+                 if (!isStart) scaleClass = "scale-100";
+                 pointerEvents = "pointer-events-auto";
+             }
+             // Else defaults: opacity-0, blur-0 (optimization), scale-95
+          }
 
           return (
             <div
@@ -77,12 +116,9 @@ export const LyricsView = memo(({
                 audioRef.current &&
                 (audioRef.current.currentTime = line.time)
               }
-              className={`lyric-item my-8 md:my-10 text-3xl md:text-4xl cursor-pointer select-none transition-all duration-500 ${
-                isActive ? "active-lyric scale-110" : "scale-100"
-              } ${isNear1 ? "near-active near-active-1" : ""} ${
-                isNear2 ? "near-active near-active-2" : ""
-              } ${!isVisible ? "opacity-0 blur-sm pointer-events-none" : ""}`}
-              style={{ opacity: isVisible ? undefined : 0 }} 
+              className={`lyric-item my-8 md:my-10 text-3xl md:text-4xl cursor-pointer select-none transition-all duration-700 ease-[cubic-bezier(0.25,0.46,0.45,0.94)] transform-gpu ${
+                isActive ? "active-lyric" : ""
+              } ${opacityClass} ${blurClass} ${scaleClass} ${pointerEvents}`}
             >
               {line.text || "♪"}
             </div>

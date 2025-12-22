@@ -71,16 +71,19 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   // Get current song's album key
   const currentSongAlbumKey = React.useMemo(() => {
     if (state.currentSongIndex < 0) return null;
-    const item = playlistItems[state.currentSongIndex];
+    // Fix: Use state.playlist (Queue) instead of playlistItems (Library)
+    // The currentSongIndex is always relative to state.playlist
+    const item = state.playlist[state.currentSongIndex];
     if (!item?.metadata) return null;
     return `${item.metadata.album || "Unknown Album"}__${item.metadata.artist}`;
-  }, [state.currentSongIndex, playlistItems]);
+  }, [state.currentSongIndex, state.playlist]);
 
   const currentSongArtist = React.useMemo(() => {
     if (state.currentSongIndex < 0) return null;
-    const item = playlistItems[state.currentSongIndex];
+    // Fix: Use state.playlist (Queue) 
+    const item = state.playlist[state.currentSongIndex];
     return item?.metadata?.artist || null;
-  }, [state.currentSongIndex, playlistItems]);
+  }, [state.currentSongIndex, state.playlist]);
 
   const selectedAlbumTracks = React.useMemo(() => {
     if (!selectedAlbum) return [];
@@ -522,7 +525,14 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                   ref={albumDetailContainerRef}
                   className="flex flex-col gap-2"
                 >
-                  {selectedAlbumTracks.map(({ item, idx }, i) => (
+                  {selectedAlbumTracks.map(({ item, idx }, i) => {
+                    const currentSong = state.playlist[state.currentSongIndex];
+                    const isPlaying = currentSong && (
+                       (item.path && item.path === currentSong.path) ||
+                       (item.name === currentSong.name)
+                    );
+                    
+                    return (
                     <div
                       key={idx}
                       onClick={() => onPlayContext(item, idx, { 
@@ -531,7 +541,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                         items: selectedAlbumTracks.map(t => t.item)
                       })}
                       className={`playlist-item virtual-list-item p-4 rounded-lg cursor-pointer flex items-center gap-4 ${
-                        idx === state.currentSongIndex ? "active" : ""
+                        isPlaying ? "active" : ""
                       }`}
                     >
                       <span className="text-xs font-mono text-white/30 w-6">
@@ -541,7 +551,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                         {item.metadata?.title ||
                           item.name.replace(/\.[^/.]+$/, "")}
                       </span>
-                      {idx === state.currentSongIndex && (
+                      {isPlaying && (
                         <div className="playing-indicator">
                           <span></span>
                           <span></span>
@@ -549,7 +559,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                         </div>
                       )}
                     </div>
-                  ))}
+                  )})}
                 </div>
               </div>
             </div>
@@ -725,7 +735,14 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                   ref={artistDetailContainerRef}
                   className="flex flex-col gap-2"
                 >
-                  {selectedArtistTracks.map(({ item, idx }, i) => (
+                  {selectedArtistTracks.map(({ item, idx }, i) => {
+                    const currentSong = state.playlist[state.currentSongIndex];
+                    const isPlaying = currentSong && (
+                       (item.path && item.path === currentSong.path) ||
+                       (item.name === currentSong.name)
+                    );
+                    
+                    return (
                     <div
                       key={idx}
                       onClick={() => onPlayContext(item, idx, { 
@@ -734,7 +751,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                         items: selectedArtistTracks.map(t => t.item)
                       })}
                       className={`playlist-item virtual-list-item p-4 rounded-lg cursor-pointer flex items-center gap-4 ${
-                        idx === state.currentSongIndex ? "active" : ""
+                        isPlaying ? "active" : ""
                       }`}
                     >
                       <span className="text-xs font-mono text-white/30 w-6">
@@ -769,7 +786,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                           {item.metadata?.album || "Unknown Album"}
                         </span>
                       </div>
-                      {idx === state.currentSongIndex && (
+                      {isPlaying && (
                         <div className="playing-indicator">
                           <span></span>
                           <span></span>
@@ -777,7 +794,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                         </div>
                       )}
                     </div>
-                  ))}
+                  )})}
                 </div>
               </div>
             </div>

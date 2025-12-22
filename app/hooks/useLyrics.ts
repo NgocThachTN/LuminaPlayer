@@ -1,5 +1,5 @@
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { SongState } from "../types";
 
 export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioElement>) => {
@@ -9,6 +9,69 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
   const lastScrollTimeRef = useRef(0);
   const scrollTimeoutRef = useRef<number | null>(null);
+
+  // Easing function for smooth premium feel (Ease Out Cubic)
+  const easeOutCubic = (t: number): number => {
+    return 1 - Math.pow(1 - t, 3);
+  };
+
+  // Helper function to perform the actual scroll
+  const performScroll = useCallback((index: number, behavior: ScrollBehavior | "smooth-custom" = "smooth-custom") => {
+     if (lyricsContainerRef.current) {
+        const activeElement = lyricsContainerRef.current.children[index] as HTMLElement;
+        if (activeElement) {
+           const container = lyricsContainerRef.current;
+           let containerHeight = container.clientHeight;
+           
+           if (containerHeight < 200) containerHeight = window.innerHeight * 0.6;
+           
+           const elementTop = activeElement.offsetTop;
+           const elementHeight = activeElement.clientHeight;
+           
+           // Target position
+           const targetScroll = elementTop - containerHeight * 0.3 + elementHeight / 2;
+           
+           // Instant or Native Smooth (not used by default anymore)
+           if (behavior === "instant" || behavior === "auto") {
+               container.scrollTo({ top: targetScroll, behavior: "auto" });
+               return;
+           }
+
+           // Custom Smooth Scroll Optimization
+           const startY = container.scrollTop;
+           const change = targetScroll - startY;
+           const startTime = performance.now();
+           const duration = 700; // Slower, smoother duration
+
+           const animateScroll = (currentTime: number) => {
+               const elapsed = currentTime - startTime;
+               if (elapsed > duration) {
+                   container.scrollTop = targetScroll;
+                   return;
+               }
+               
+               const progress = easeOutCubic(elapsed / duration);
+               container.scrollTop = startY + change * progress;
+               
+               requestAnimationFrame(animateScroll);
+           };
+           
+           requestAnimationFrame(animateScroll);
+        }
+     }
+  }, []);
+
+  // Exposed function to force scroll to active line
+  const scrollToActiveLine = useCallback((instant = false) => {
+     if (activeLyricIndex >= 0) {
+        if (scrollTimeoutRef.current) {
+            cancelAnimationFrame(scrollTimeoutRef.current);
+        }
+        scrollTimeoutRef.current = requestAnimationFrame(() => {
+            performScroll(activeLyricIndex, instant ? "instant" : "smooth");
+        });
+     }
+  }, [activeLyricIndex, performScroll]);
 
   // Optimized lyric tracking with debounced scroll (only for synced lyrics)
   useEffect(() => {
@@ -23,12 +86,6 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
     if (index !== activeLyricIndex && index >= 0) {
       setActiveLyricIndex(index);
 
-      // Don't auto-scroll if user is scrolling
-      // if (isUserScrolling) return; 
-      // Actually per App.tsx logic, we still scroll unless user interaction flag prevents it?
-      // In App.tsx the `isUserScrolling` only affects visibility of lines (fading out others).
-      // The scroll logic itself just checks `lastScrollTimeRef`.
-      
       // Debounce scroll to avoid excessive calls
       const now = Date.now();
       if (now - lastScrollTimeRef.current > 100) {
@@ -38,29 +95,18 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
           cancelAnimationFrame(scrollTimeoutRef.current);
         }
 
+        // Double RAF to ensure we run AFTER the layout/paint of the new class state
         scrollTimeoutRef.current = requestAnimationFrame(() => {
-          if (lyricsContainerRef.current) {
-            const activeElement = lyricsContainerRef.current.children[
-              index
-            ] as HTMLElement;
-            if (activeElement) {
-              const container = lyricsContainerRef.current;
-              const containerHeight = container.clientHeight;
-              const elementTop = activeElement.offsetTop;
-              const elementHeight = activeElement.clientHeight;
-              const targetScroll =
-                elementTop - containerHeight / 2 + elementHeight / 2;
-
-              container.scrollTo({
-                top: targetScroll,
-                behavior: "smooth",
-              });
-            }
-          }
+           requestAnimationFrame(() => {
+               // If this is the first activation (-1 -> index), snap instantly to avoid lag/jump
+               // Otherwise animate smoothly
+               const behavior = activeLyricIndex === -1 ? "instant" : "smooth-custom";
+               performScroll(index, behavior);
+           });
         });
       }
     }
-  }, [state.currentTime, state.lyrics, activeLyricIndex]);
+  }, [state.currentTime, state.lyrics, activeLyricIndex, performScroll]);
 
   // Scroll lyrics to top when song changes
   useEffect(() => {
@@ -86,5 +132,6 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
     setIsUserScrolling,
     userScrollTimeoutRef,
     lyricsContainerRef,
+    scrollToActiveLine,
   };
 };

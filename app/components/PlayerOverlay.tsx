@@ -80,14 +80,31 @@ export const PlayerOverlay: React.FC<PlayerOverlayProps> = ({
   [dominantColor]);
 
   // Scroll to active line when opening lyrics
-  React.useEffect(() => {
+  React.useLayoutEffect(() => {
     if (showLyrics && scrollToActiveLine) {
-       // Small timeout to allow layout transition to complete/start
-       setTimeout(() => {
-         scrollToActiveLine();
-       }, 100);
-       // Also try immediately just in case
-       scrollToActiveLine();
+       let animationFrameId: number;
+       const startTime = performance.now();
+       const duration = 600; // Match transition duration
+
+       const animateScroll = (currentTime: number) => {
+          const elapsed = currentTime - startTime;
+          
+          // Continuously snap to correct position as layout expands
+          scrollToActiveLine(true);
+
+          if (elapsed < duration) {
+             animationFrameId = requestAnimationFrame(animateScroll);
+          } else {
+             // Final smooth adjustment
+             scrollToActiveLine(false);
+          }
+       };
+
+       animationFrameId = requestAnimationFrame(animateScroll);
+
+       return () => {
+         cancelAnimationFrame(animationFrameId);
+       };
     }
   }, [showLyrics, scrollToActiveLine]);
 
@@ -328,7 +345,7 @@ export const PlayerOverlay: React.FC<PlayerOverlayProps> = ({
       
       {/* Right Side of Overlay: Lyrics */}
       <div className={`md:flex h-full flex-col relative bg-transparent transition-[flex-basis] duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] will-change-[flex-basis] overflow-hidden ${showLyrics ? 'flex-[1_0_55%]' : 'flex-[0_0_0px]'}`}>
-        <div className={`h-full w-full transition-[opacity,filter,transform] duration-700 ease-out delay-100 transform-gpu will-change-[opacity,filter,transform] ${showLyrics ? 'opacity-100 blur-0 scale-100' : 'opacity-0 blur-md scale-95'}`}>
+        <div className={`h-full w-full transition-[opacity,transform] duration-700 ease-out delay-100 transform-gpu will-change-[opacity,transform] ${showLyrics ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
 
 
 
