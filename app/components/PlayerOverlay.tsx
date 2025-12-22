@@ -322,9 +322,9 @@ export const PlayerOverlay: React.FC<PlayerOverlayProps> = ({
       </div>
     </div>
       
-      {/* Right Side of Overlay: Lyrics */}
+      {/* Right Side of Overlay: Lyrics - smooth fade and scale */}
       <div className={`md:flex h-full flex-col relative bg-transparent transform-gpu overflow-hidden ${showLyrics ? 'flex-[1_0_55%]' : 'flex-[0_0_0px]'}`}>
-        <div className={`h-full w-full ${showLyrics ? 'opacity-100' : 'opacity-0'}`} style={{ transition: 'opacity 0.2s ease-out' }}>
+        <div className={`h-full w-full transform-gpu transition-all duration-300 ease-out ${showLyrics ? 'opacity-100 translate-x-0 scale-100' : 'opacity-0 translate-x-8 scale-95'}`}>
 
 
 
