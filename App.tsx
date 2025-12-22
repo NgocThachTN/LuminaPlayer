@@ -156,9 +156,9 @@ const App: React.FC = () => {
             // Lyrics props
             lyricsContainerRef={lyricsHook.lyricsContainerRef}
             activeLyricIndex={lyricsHook.activeLyricIndex}
-            isUserScrolling={lyricsHook.isUserScrolling}
-            setIsUserScrolling={lyricsHook.setIsUserScrolling}
-            userScrollTimeoutRef={lyricsHook.userScrollTimeoutRef}
+            autoScrollEnabled={lyricsHook.autoScrollEnabled}
+            stopAutoScroll={lyricsHook.stopAutoScroll}
+            resumeAutoScroll={lyricsHook.resumeAutoScroll}
             isLoading={isLoading}
             // UI Helpers
             setViewMode={uiHook.setViewMode}

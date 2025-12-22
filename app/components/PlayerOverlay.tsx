@@ -26,9 +26,9 @@ interface PlayerOverlayProps {
   // From useLyrics hook
   lyricsContainerRef: React.RefObject<HTMLDivElement>;
   activeLyricIndex: number;
-  isUserScrolling: boolean;
-  setIsUserScrolling: (v: boolean) => void;
-  userScrollTimeoutRef: React.MutableRefObject<NodeJS.Timeout | null>;
+  autoScrollEnabled: boolean;
+  stopAutoScroll: () => void;
+  resumeAutoScroll: () => void;
   isLoading: boolean;
   scrollToActiveLine: () => void;
   
@@ -65,9 +65,9 @@ export const PlayerOverlay: React.FC<PlayerOverlayProps> = ({
   setState,
   lyricsContainerRef,
   activeLyricIndex,
-  isUserScrolling,
-  setIsUserScrolling,
-  userScrollTimeoutRef,
+  autoScrollEnabled,
+  stopAutoScroll,
+  resumeAutoScroll,
   isLoading,
   scrollToActiveLine,
   setViewMode,
@@ -81,7 +81,7 @@ export const PlayerOverlay: React.FC<PlayerOverlayProps> = ({
 
   // Scroll to active line when opening lyrics
   React.useLayoutEffect(() => {
-    if (showLyrics && scrollToActiveLine) {
+    if (showLyrics && scrollToActiveLine && autoScrollEnabled) {
        let animationFrameId: number;
        const startTime = performance.now();
        const duration = 600; // Match transition duration
@@ -106,7 +106,7 @@ export const PlayerOverlay: React.FC<PlayerOverlayProps> = ({
          cancelAnimationFrame(animationFrameId);
        };
     }
-  }, [showLyrics, scrollToActiveLine]);
+  }, [showLyrics, scrollToActiveLine, autoScrollEnabled]);
 
   return (
     <>
@@ -353,9 +353,9 @@ export const PlayerOverlay: React.FC<PlayerOverlayProps> = ({
             lyrics={state.lyrics}
             isLoading={isLoading}
             activeLyricIndex={activeLyricIndex}
-            isUserScrolling={isUserScrolling}
-            setIsUserScrolling={setIsUserScrolling}
-            userScrollTimeoutRef={userScrollTimeoutRef}
+            autoScrollEnabled={autoScrollEnabled}
+            stopAutoScroll={stopAutoScroll}
+            resumeAutoScroll={resumeAutoScroll}
             lyricsContainerRef={lyricsContainerRef}
             audioRef={audioRef}
             file={state.file}

@@ -5,9 +5,9 @@ interface LyricsViewProps {
   lyrics: SongState['lyrics'];
   isLoading: boolean;
   activeLyricIndex: number;
-  isUserScrolling: boolean;
-  setIsUserScrolling: (v: boolean) => void;
-  userScrollTimeoutRef: React.MutableRefObject<NodeJS.Timeout | null>;
+  autoScrollEnabled: boolean;
+  stopAutoScroll: () => void;
+  resumeAutoScroll: () => void;
   lyricsContainerRef: React.RefObject<HTMLDivElement>;
   audioRef: React.RefObject<HTMLAudioElement>;
   file: File | null; // Needed for "No Lyrics Found" vs "Select a Track"
@@ -17,16 +17,19 @@ export const LyricsView = memo(({
   lyrics,
   isLoading,
   activeLyricIndex,
-  isUserScrolling,
-  setIsUserScrolling,
-  userScrollTimeoutRef,
+  autoScrollEnabled,
+  stopAutoScroll,
+  resumeAutoScroll,
   lyricsContainerRef,
   audioRef,
   file
 }: LyricsViewProps) => {
+  // Check if we have lyrics to show
   const hasLyrics = lyrics.synced.length > 0 || lyrics.plain.length > 0;
 
-  if (isLoading) {
+  // Only show loading if we are loading AND don't have lyrics yet
+  // This prevents the "Loading" screen from hiding lyrics while audio buffers
+  if (isLoading && !hasLyrics) {
     return (
       <div className="h-full w-full flex flex-col items-center justify-center gap-6">
         <div className="loading-spinner"></div>
@@ -39,91 +42,98 @@ export const LyricsView = memo(({
 
   if (lyrics.isSynced) {
     return (
-      <div
-        ref={lyricsContainerRef}
-        className="h-full w-full overflow-y-auto lyrics-scroll py-[35vh] px-6 md:px-12 relative will-change-scroll"
-        style={{ maskImage: 'linear-gradient(to bottom, transparent 0%, black 10%, black 85%, transparent 100%)', WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 10%, black 85%, transparent 100%)' }}
-        onWheel={() => {
-           setIsUserScrolling(true);
-           if (userScrollTimeoutRef.current) clearTimeout(userScrollTimeoutRef.current);
-           userScrollTimeoutRef.current = setTimeout(() => setIsUserScrolling(false), 2000);
-        }}
-        onTouchMove={() => {
-           setIsUserScrolling(true);
-           if (userScrollTimeoutRef.current) clearTimeout(userScrollTimeoutRef.current);
-           userScrollTimeoutRef.current = setTimeout(() => setIsUserScrolling(false), 2000);
-        }}
-      >
-        {lyrics.synced.map((line, idx) => {
-          const distance = idx - activeLyricIndex;
-          const isActive = idx === activeLyricIndex;
-          const isPast = idx < activeLyricIndex;
+      <div className="relative h-full w-full">
+        <div
+          ref={lyricsContainerRef}
+          className="h-full w-full overflow-y-auto lyrics-scroll py-[35vh] px-6 md:px-12 relative will-change-scroll"
+          style={{ maskImage: 'linear-gradient(to bottom, transparent 0%, black 10%, black 85%, transparent 100%)', WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 10%, black 85%, transparent 100%)' }}
+          onWheel={stopAutoScroll}
+          onTouchMove={stopAutoScroll}
+        >
+          {lyrics.synced.map((line, idx) => {
+            const distance = idx - activeLyricIndex;
+            const isActive = idx === activeLyricIndex;
+            const isPast = idx < activeLyricIndex;
 
-          let opacityClass = "opacity-0";
-          let blurClass = "blur-0";
-          let scaleClass = "scale-95";
-          let pointerEvents = "pointer-events-none";
+            let opacityClass = "opacity-0";
+            let blurClass = "blur-0";
+            let scaleClass = "scale-95";
+            let pointerEvents = "pointer-events-none";
 
-          if (isUserScrolling) {
-             const absDist = Math.abs(distance);
-             if (absDist <= 1) opacityClass = "opacity-100";
-             else if (absDist <= 3) opacityClass = "opacity-75"; 
-             else opacityClass = "opacity-40";
-             
-             scaleClass = "scale-100";
-             pointerEvents = "pointer-events-auto";
-          } else {
-             const isStart = activeLyricIndex === -1;
-             // Allow 4 lines if start, otherwise 3
-             const maxFutureLines = isStart ? 4 : 3;
+            // If auto-scroll is disabled, user is manually browsing
+            // Show all lines more clearly (like Apple Music 'browse' mode)
+            if (!autoScrollEnabled) {
+               const absDist = Math.abs(distance);
+               if (absDist <= 1) opacityClass = "opacity-100";
+               else if (absDist <= 4) opacityClass = "opacity-75"; 
+               else opacityClass = "opacity-40";
+               
+               scaleClass = "scale-100";
+               pointerEvents = "pointer-events-auto";
+            } else {
+               const isStart = activeLyricIndex === -1;
+               // Allow 4 lines if start, otherwise 3
+               const maxFutureLines = isStart ? 4 : 3;
 
-             if (isActive) {
-                 opacityClass = "opacity-100";
-                 scaleClass = "scale-110";
-                 pointerEvents = "pointer-events-auto";
-                 blurClass = "blur-0";
-             } else if (distance === -1) {
-                 // The line just passed - Blur it out as it fades
-                 opacityClass = "opacity-0"; 
-                 scaleClass = "scale-95";
-                 blurClass = "blur-sm"; // Reduced from blur-lg for better performance while keeping effect
-             } else if (distance > 0 && distance <= maxFutureLines) {
-                 if (distance === 1) {
-                    opacityClass = isStart ? "opacity-100" : "opacity-80";
-                    blurClass = isStart ? "blur-0" : "blur-[0.5px]";
-                    if (isStart) scaleClass = "scale-105"; // Highlight first line at start
-                 } else if (distance === 2) {
-                    opacityClass = isStart ? "opacity-80" : "opacity-60";
-                    blurClass = isStart ? "blur-[0.5px]" : "blur-[1px]";
-                 } else if (distance === 3) {
-                    opacityClass = isStart ? "opacity-60" : "opacity-40";
-                    blurClass = isStart ? "blur-[1px]" : "blur-[1.5px]";
-                 } else { // distance 4 (only if isStart)
-                    opacityClass = "opacity-40";
-                    blurClass = "blur-[1.5px]";
-                 }
-                 
-                 if (!isStart) scaleClass = "scale-100";
-                 pointerEvents = "pointer-events-auto";
-             }
-             // Else defaults: opacity-0, blur-0 (optimization), scale-95
-          }
+               if (isActive) {
+                   opacityClass = "opacity-100";
+                   scaleClass = "scale-110";
+                   pointerEvents = "pointer-events-auto";
+                   blurClass = "blur-0";
+               } else if (distance === -1) {
+                   // The line just passed - Blur it out as it fades
+                   opacityClass = "opacity-0"; 
+                   scaleClass = "scale-95";
+                   blurClass = "blur-sm"; // Reduced from blur-lg for better performance while keeping effect
+               } else if (distance > 0 && distance <= maxFutureLines) {
+                   if (distance === 1) {
+                      opacityClass = isStart ? "opacity-100" : "opacity-80";
+                      blurClass = isStart ? "blur-0" : "blur-[0.5px]";
+                      if (isStart) scaleClass = "scale-105"; // Highlight first line at start
+                   } else if (distance === 2) {
+                      opacityClass = isStart ? "opacity-80" : "opacity-60";
+                      blurClass = isStart ? "blur-[0.5px]" : "blur-[1px]";
+                   } else if (distance === 3) {
+                      opacityClass = isStart ? "opacity-60" : "opacity-40";
+                      blurClass = isStart ? "blur-[1px]" : "blur-[1.5px]";
+                   } else { // distance 4 (only if isStart)
+                      opacityClass = "opacity-40";
+                      blurClass = "blur-[1.5px]";
+                   }
+                   
+                   if (!isStart) scaleClass = "scale-100";
+                   pointerEvents = "pointer-events-auto";
+               }
+               // Else defaults: opacity-0, blur-0 (optimization), scale-95
+            }
 
-          return (
-            <div
-              key={idx}
-              onClick={() =>
-                audioRef.current &&
-                (audioRef.current.currentTime = line.time)
-              }
-              className={`lyric-item my-8 md:my-10 text-3xl md:text-4xl cursor-pointer select-none transition-all duration-700 ease-[cubic-bezier(0.25,0.46,0.45,0.94)] transform-gpu ${
-                isActive ? "active-lyric" : ""
-              } ${opacityClass} ${blurClass} ${scaleClass} ${pointerEvents}`}
-            >
-              {line.text || "♪"}
-            </div>
-          );
-        })}
+            return (
+              <div
+                key={idx}
+                onClick={() =>
+                  audioRef.current &&
+                  (audioRef.current.currentTime = line.time)
+                }
+                className={`lyric-item my-8 md:my-10 text-3xl md:text-4xl cursor-pointer select-none transition-all duration-700 ease-[cubic-bezier(0.25,0.46,0.45,0.94)] transform-gpu ${
+                  isActive ? "active-lyric" : ""
+                } ${opacityClass} ${blurClass} ${scaleClass} ${pointerEvents}`}
+              >
+                {line.text || "♪"}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Resume Sync Button */}
+        {!autoScrollEnabled && (
+          <button 
+            onClick={resumeAutoScroll}
+            className="absolute bottom-8 right-8 z-50 bg-black/50 text-white backdrop-blur-md px-4 py-2 rounded-full font-medium text-sm flex items-center gap-2 hover:bg-black/70 transition-all border border-white/10 shadow-lg animate-in fade-in slide-in-from-bottom-4"
+          >
+             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 14l-7 7m0 0l-7-7m7 7V3" /></svg>
+             Resume Sync
+          </button>
+        )}
       </div>
     );
   }

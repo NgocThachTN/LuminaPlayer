@@ -4,11 +4,15 @@ import { SongState } from "../types";
 
 export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioElement>) => {
   const [activeLyricIndex, setActiveLyricIndex] = useState(-1);
-  const [isUserScrolling, setIsUserScrolling] = useState(false);
-  const userScrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
   const lastScrollTimeRef = useRef(0);
   const scrollTimeoutRef = useRef<number | null>(null);
+  const resumeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Keep track of active index in ref for async access (timeout)
+  const activeLyricIndexRef = useRef(activeLyricIndex);
+  useEffect(() => { activeLyricIndexRef.current = activeLyricIndex; }, [activeLyricIndex]);
 
   // Easing function for smooth premium feel (Ease Out Cubic)
   const easeOutCubic = (t: number): number => {
@@ -62,16 +66,36 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
   }, []);
 
   // Exposed function to force scroll to active line
+  // Uses Ref to ensure we always scroll to the *current* active line even if called from a stale timeout
   const scrollToActiveLine = useCallback((instant = false) => {
-     if (activeLyricIndex >= 0) {
+     const idx = activeLyricIndexRef.current;
+     if (idx >= 0) {
         if (scrollTimeoutRef.current) {
             cancelAnimationFrame(scrollTimeoutRef.current);
         }
         scrollTimeoutRef.current = requestAnimationFrame(() => {
-            performScroll(activeLyricIndex, instant ? "instant" : "smooth");
+            performScroll(idx, instant ? "instant" : "smooth");
         });
      }
-  }, [activeLyricIndex, performScroll]);
+  }, [performScroll]);
+
+  // Resume auto-scroll and snap to current line
+  const resumeAutoScroll = useCallback(() => {
+     if (resumeTimeoutRef.current) clearTimeout(resumeTimeoutRef.current);
+     setAutoScrollEnabled(true);
+     scrollToActiveLine(false);
+  }, [scrollToActiveLine]);
+
+  // Lock auto-scroll when user interacts, and auto-resume after 5s idle
+  const stopAutoScroll = useCallback(() => {
+     setAutoScrollEnabled(false);
+     
+     if (resumeTimeoutRef.current) clearTimeout(resumeTimeoutRef.current);
+     
+     resumeTimeoutRef.current = setTimeout(() => {
+         resumeAutoScroll();
+     }, 4000); // 4000-5000ms delay
+  }, [resumeAutoScroll]);
 
   // Optimized lyric tracking with debounced scroll (only for synced lyrics)
   useEffect(() => {
@@ -101,12 +125,16 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
                // If this is the first activation (-1 -> index), snap instantly to avoid lag/jump
                // Otherwise animate smoothly
                const behavior = activeLyricIndex === -1 ? "instant" : "smooth-custom";
-               performScroll(index, behavior);
+               
+               // Only auto-scroll if enabled OR if it's the very first load
+               if (autoScrollEnabled || activeLyricIndex === -1) {
+                   performScroll(index, behavior);
+               }
            });
         });
       }
     }
-  }, [state.currentTime, state.lyrics, activeLyricIndex, performScroll]);
+  }, [state.currentTime, state.lyrics, activeLyricIndex, performScroll, autoScrollEnabled]);
 
   // Scroll lyrics to top when song changes
   useEffect(() => {
@@ -114,6 +142,7 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
       lyricsContainerRef.current.scrollTop = 0;
     }
     setActiveLyricIndex(-1);
+    setAutoScrollEnabled(true); // Reset scroll lock on new song
     lastScrollTimeRef.current = 0;
   }, [state.currentSongIndex]);
 
@@ -128,9 +157,9 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
 
   return {
     activeLyricIndex,
-    isUserScrolling,
-    setIsUserScrolling,
-    userScrollTimeoutRef,
+    autoScrollEnabled,
+    stopAutoScroll,
+    resumeAutoScroll,
     lyricsContainerRef,
     scrollToActiveLine,
   };
