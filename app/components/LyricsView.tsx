@@ -45,8 +45,8 @@ export const LyricsView = memo(({
       <div className="relative h-full w-full">
         <div
           ref={lyricsContainerRef}
-          className="h-full w-full overflow-y-auto lyrics-scroll py-[35vh] px-6 md:px-12 relative will-change-scroll"
-          style={{ maskImage: 'linear-gradient(to bottom, transparent 0%, black 10%, black 85%, transparent 100%)', WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 10%, black 85%, transparent 100%)' }}
+          className="h-full w-full overflow-y-auto lyrics-scroll pt-[30vh] pb-[50vh] px-6 md:px-12 relative will-change-scroll"
+          style={{ maskImage: 'linear-gradient(to bottom, transparent 0%, black 15%, black 90%, transparent 100%)', WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 15%, black 90%, transparent 100%)' }}
           onWheel={stopAutoScroll}
           onTouchMove={stopAutoScroll}
         >
@@ -89,16 +89,16 @@ export const LyricsView = memo(({
                    if (distance === 1) {
                       opacityClass = isStart ? "opacity-100" : "opacity-80";
                       blurClass = isStart ? "blur-0" : "blur-[0.5px]";
-                      if (isStart) scaleClass = "scale-105"; // Highlight first line at start
+                      if (isStart) scaleClass = "scale-105"; 
                    } else if (distance === 2) {
-                      opacityClass = isStart ? "opacity-80" : "opacity-60";
-                      blurClass = isStart ? "blur-[0.5px]" : "blur-[1px]";
+                      opacityClass = isStart ? "opacity-90" : "opacity-60";
+                      blurClass = isStart ? "blur-0" : "blur-[1px]";
                    } else if (distance === 3) {
-                      opacityClass = isStart ? "opacity-60" : "opacity-40";
-                      blurClass = isStart ? "blur-[1px]" : "blur-[1.5px]";
+                      opacityClass = isStart ? "opacity-80" : "opacity-40";
+                      blurClass = isStart ? "blur-[0.5px]" : "blur-[1.5px]";
                    } else { // distance 4 (only if isStart)
-                      opacityClass = "opacity-40";
-                      blurClass = "blur-[1.5px]";
+                      opacityClass = "opacity-60";
+                      blurClass = "blur-[1px]";
                    }
                    
                    if (!isStart) scaleClass = "scale-100";
@@ -114,7 +114,7 @@ export const LyricsView = memo(({
                   audioRef.current &&
                   (audioRef.current.currentTime = line.time)
                 }
-                className={`lyric-item my-8 md:my-10 text-3xl md:text-4xl cursor-pointer select-none transition-all duration-700 ease-[cubic-bezier(0.25,0.46,0.45,0.94)] transform-gpu ${
+                className={`lyric-item my-4 md:my-6 text-3xl md:text-4xl cursor-pointer select-none transition-all duration-700 ease-[cubic-bezier(0.25,0.46,0.45,0.94)] transform-gpu ${
                   isActive ? "active-lyric" : ""
                 } ${opacityClass} ${blurClass} ${scaleClass} ${pointerEvents}`}
               >

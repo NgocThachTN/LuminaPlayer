@@ -14,6 +14,21 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
   const activeLyricIndexRef = useRef(activeLyricIndex);
   useEffect(() => { activeLyricIndexRef.current = activeLyricIndex; }, [activeLyricIndex]);
 
+  // Safeguard against stale time values during song transition
+  const lastSongUrlRef = useRef(state.url);
+  const ignoreTimeRef = useRef(false);
+
+  // If song URL changes, ignore time updates until time resets
+  if (lastSongUrlRef.current !== state.url) {
+      lastSongUrlRef.current = state.url;
+      ignoreTimeRef.current = true;
+  }
+
+  // If time resets to near 0, stop ignoring
+  if (ignoreTimeRef.current && state.currentTime < 1) {
+      ignoreTimeRef.current = false;
+  }
+
   // Easing function for smooth premium feel (Ease Out Cubic)
   const easeOutCubic = (t: number): number => {
     return 1 - Math.pow(1 - t, 3);
@@ -99,7 +114,7 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
 
   // Optimized lyric tracking with debounced scroll (only for synced lyrics)
   useEffect(() => {
-    if (!state.lyrics.isSynced || state.lyrics.synced.length === 0) return;
+    if (ignoreTimeRef.current || !state.lyrics.isSynced || state.lyrics.synced.length === 0) return;
 
     // Add small offset (200ms ahead) so lyrics feel more in sync
     const currentTime = state.currentTime + 0.2;
@@ -136,7 +151,7 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
     }
   }, [state.currentTime, state.lyrics, activeLyricIndex, performScroll, autoScrollEnabled]);
 
-  // Scroll lyrics to top when song changes
+  // Scroll lyrics to top when song changes (track by URL for uniqueness)
   useEffect(() => {
     if (lyricsContainerRef.current) {
       lyricsContainerRef.current.scrollTop = 0;
@@ -144,7 +159,11 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
     setActiveLyricIndex(-1);
     setAutoScrollEnabled(true); // Reset scroll lock on new song
     lastScrollTimeRef.current = 0;
-  }, [state.currentSongIndex]);
+    
+    // Reset our stale time usage reference
+    lastSongUrlRef.current = state.url;
+    ignoreTimeRef.current = true; // Actively ignore time at start of new URL
+  }, [state.url]);
 
   // Cleanup
   useEffect(() => {
