@@ -101,21 +101,23 @@ export const PlayerOverlay: React.FC<PlayerOverlayProps> = ({
            className="absolute inset-0 z-0 overflow-hidden"
            aria-hidden="true"
          >
-           {/* Base layer - heavily blurred album art */}
-           <div 
-             className="absolute inset-[-150px] bg-cover bg-center transition-all duration-[1500ms] ease-out"
+           {/* Base layer - heavily blurred album art using img for consistent color */}
+           <img 
+             src={state.metadata.cover}
+             alt=""
+             className="absolute inset-[-150px] w-[calc(100%+300px)] h-[calc(100%+300px)] object-cover transition-all duration-[1500ms] ease-out"
              style={{ 
-               backgroundImage: `url(${state.metadata.cover})`,
-               filter: 'blur(120px) saturate(1.4) brightness(0.6)',
+               filter: 'blur(120px) saturate(1.8) brightness(0.7)',
                transform: 'scale(1.5)',
              }}
            />
            {/* Color accent layer - adds depth and vibrancy */}
-           <div 
-             className="absolute inset-[-80px] bg-cover bg-center mix-blend-overlay opacity-60 transition-all duration-[1500ms]"
+           <img 
+             src={state.metadata.cover}
+             alt=""
+             className="absolute inset-[-80px] w-[calc(100%+160px)] h-[calc(100%+160px)] object-cover mix-blend-overlay opacity-70 transition-all duration-[1500ms]"
              style={{ 
-               backgroundImage: `url(${state.metadata.cover})`,
-               filter: 'blur(80px) saturate(1.6)',
+               filter: 'blur(80px) saturate(2.0)',
                transform: 'scale(1.3)',
              }}
            />

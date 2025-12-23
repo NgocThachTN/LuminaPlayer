@@ -223,6 +223,9 @@ app.commandLine.appendSwitch('disable-software-rasterizer');
 app.commandLine.appendSwitch('enable-accelerated-video-decode');
 app.commandLine.appendSwitch('enable-native-gpu-memory-buffers');
 
+// Fix color rendering to match web browser (prevents washed-out colors in CSS blur)
+app.commandLine.appendSwitch('force-color-profile', 'srgb');
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
