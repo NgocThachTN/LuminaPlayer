@@ -21,6 +21,9 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
   // Track song identity to reset on song change
   const lastSongUrlRef = useRef(state.url);
   const lastLyricsRef = useRef(state.lyrics);
+  
+  // Track previous time to detect seeking backward
+  const lastTimeRef = useRef(state.currentTime);
 
   // Easing function for smooth premium feel (Ease Out Cubic)
   const easeOutCubic = (t: number): number => {
@@ -39,7 +42,7 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
            // Get the ACTUAL computed padding-top from the container
            // This ensures we use the exact same value that CSS is using
            const computedStyle = window.getComputedStyle(container);
-           const paddingTop = parseFloat(computedStyle.paddingTop) || (window.innerHeight * 0.35);
+           const paddingTop = parseFloat(computedStyle.paddingTop) || (window.innerHeight * 0.26);
            
            // Target scroll position: Put element at the same position as padding-top
            const targetScroll = Math.max(0, elementTop - paddingTop);
@@ -47,15 +50,16 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
            // Get current scroll position
            const currentScroll = container.scrollTop;
            
-           // If difference is very small (< 3px), skip scroll to prevent jitter
-           if (Math.abs(targetScroll - currentScroll) < 3) {
-              return;
-           }
-           
-           // Instant or Native Smooth
+           // For instant scroll (e.g., on seek or initial load), always perform it
+           // This ensures proper positioning even if difference is small
            if (behavior === "instant" || behavior === "auto") {
                container.scrollTo({ top: targetScroll, behavior: "auto" });
                return;
+           }
+           
+           // For smooth scroll, skip if difference is very small (< 3px) to prevent jitter
+           if (Math.abs(targetScroll - currentScroll) < 3) {
+              return;
            }
 
            // Custom Smooth Scroll Optimization
@@ -117,13 +121,30 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
   useEffect(() => {
     if (!state.lyrics.isSynced || state.lyrics.synced.length === 0) return;
 
+    const prevTime = lastTimeRef.current;
+    const currTime = state.currentTime;
+    lastTimeRef.current = currTime;
+    
+    // Detect seeking backward to near the beginning of the song
+    // If time dropped by more than 3 seconds AND new time is below 2 seconds
+    const seekedToStart = (prevTime - currTime > 3) && currTime < 2;
+    
+    if (seekedToStart) {
+      // Reset scroll position to top
+      if (lyricsContainerRef.current) {
+        lyricsContainerRef.current.scrollTop = 0;
+      }
+      // Reset to trigger instant scroll for the first lyric
+      setInitialScrollDone(false);
+    }
+
     // Add small offset (200ms ahead) so lyrics feel more in sync
-    const currentTime = state.currentTime + 0.2;
+    const currentTime = currTime + 0.2;
     const index = state.lyrics.synced.findLastIndex(
       (l) => l.time <= currentTime
     );
 
-    // Only update if changed and valid
+    // Only update if changed
     if (index !== activeLyricIndex) {
       setActiveLyricIndex(index);
     }

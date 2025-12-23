@@ -52,7 +52,7 @@ export const LyricsView = memo(({
     const effectiveIndex = validatedIndex;
 
     // Use consistent offset for both CSS and scroll calculations
-    const LYRICS_TOP_OFFSET = '25vh';
+    const LYRICS_TOP_OFFSET = '26vh';
 
     return (
       <div className="relative h-full w-full">
@@ -88,8 +88,11 @@ export const LyricsView = memo(({
                scaleClass = "scale-100";
                pointerEvents = "pointer-events-auto";
             } else {
+               // Check if we're in "start" state (no active lyric yet)
                const isStart = effectiveIndex === -1;
-               // Allow 4 lines if start, otherwise 3
+               
+               // When in start state, show first 4 lyrics
+               // When playing, show 3 upcoming lyrics
                const maxFutureLines = isStart ? 4 : 3;
 
                if (isActive) {
@@ -97,28 +100,37 @@ export const LyricsView = memo(({
                    scaleClass = "scale-110";
                    pointerEvents = "pointer-events-auto";
                    blurClass = "blur-0";
+               } else if (isStart && idx < 4) {
+                   // In start mode, show first 4 lyrics clearly
+                   if (idx === 0) {
+                      opacityClass = "opacity-100";
+                      scaleClass = "scale-105";
+                   } else if (idx === 1) {
+                      opacityClass = "opacity-90";
+                   } else if (idx === 2) {
+                      opacityClass = "opacity-80";
+                   } else {
+                      opacityClass = "opacity-60";
+                   }
+                   scaleClass = idx === 0 ? "scale-105" : "scale-100";
+                   pointerEvents = "pointer-events-auto";
                } else if (distance === -1) {
                    // The line just passed - Blur it out as it fades
                    opacityClass = "opacity-0"; 
                    scaleClass = "scale-95";
-                   blurClass = "blur-sm"; // Reduced from blur-lg for better performance while keeping effect
+                   blurClass = "blur-sm";
                } else if (distance > 0 && distance <= maxFutureLines) {
                    if (distance === 1) {
-                      opacityClass = isStart ? "opacity-100" : "opacity-80";
-                      blurClass = isStart ? "blur-0" : "blur-[0.5px]";
-                      if (isStart) scaleClass = "scale-105"; 
+                      opacityClass = "opacity-80";
+                      blurClass = "blur-[0.5px]";
                    } else if (distance === 2) {
-                      opacityClass = isStart ? "opacity-90" : "opacity-60";
-                      blurClass = isStart ? "blur-0" : "blur-[1px]";
-                   } else if (distance === 3) {
-                      opacityClass = isStart ? "opacity-80" : "opacity-40";
-                      blurClass = isStart ? "blur-[0.5px]" : "blur-[1.5px]";
-                   } else { // distance 4 (only if isStart)
                       opacityClass = "opacity-60";
                       blurClass = "blur-[1px]";
+                   } else if (distance === 3) {
+                      opacityClass = "opacity-40";
+                      blurClass = "blur-[1.5px]";
                    }
-                   
-                   if (!isStart) scaleClass = "scale-100";
+                   scaleClass = "scale-100";
                    pointerEvents = "pointer-events-auto";
                }
                // Else defaults: opacity-0, blur-0 (optimization), scale-95
