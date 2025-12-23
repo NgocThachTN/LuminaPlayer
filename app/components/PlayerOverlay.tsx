@@ -340,6 +340,7 @@ export const PlayerOverlay: React.FC<PlayerOverlayProps> = ({
             audioRef={audioRef}
             file={state.file}
             hasStarted={hasStarted}
+            currentTime={state.currentTime}
           />
 
         </div>
