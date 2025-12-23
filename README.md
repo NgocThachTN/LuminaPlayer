@@ -1,6 +1,6 @@
 # LuminaPlayer
 
-Minimalist music player with synchronized lyrics and high-res audio support.
+A minimalist music player with synchronized lyrics, high-res audio support, and Discord Rich Presence integration.
 
 <img src="assets/banner.png" width="100%">
 
