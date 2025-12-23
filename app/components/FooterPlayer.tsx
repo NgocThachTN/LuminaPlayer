@@ -45,7 +45,7 @@ export const FooterPlayer: React.FC<FooterPlayerProps> = ({
          <div className="absolute top-0 left-0 w-full h-1 bg-white/10 group-hover:h-1.5 transition-all duration-200">
             <div 
               className="h-full bg-white relative"
-              style={{ width: `${(state.currentTime / state.duration) * 100 || 0}%` }}
+              style={{ width: `${Math.min(100, (state.currentTime / state.duration) * 100 || 0)}%` }}
             ></div>
          </div>
          <input
@@ -94,7 +94,16 @@ export const FooterPlayer: React.FC<FooterPlayerProps> = ({
 
         {/* CENTER: Playback Controls */}
         <div className="flex flex-col items-center justify-center w-[40%]">
-           <div className="flex items-center gap-6">
+           <div className="flex items-center gap-4">
+              {/* Shuffle */}
+              <button 
+                onClick={(e) => { e.stopPropagation(); setState(prev => ({ ...prev, isShuffle: !prev.isShuffle })); }}
+                className={`text-white/70 hover:text-white transition-colors p-2 ${state.isShuffle ? 'text-[#f1c40f]' : ''}`}
+                title="Shuffle"
+              >
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></svg>
+              </button>
+
                {/* Previous */}
               <button
                 onClick={(e) => { e.stopPropagation(); playPrevious(); }}
@@ -123,6 +132,26 @@ export const FooterPlayer: React.FC<FooterPlayerProps> = ({
                 disabled={playlistCount === 0}
               >
                 <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" /></svg>
+              </button>
+
+              {/* Repeat */}
+              <button 
+                onClick={(e) => { 
+                  e.stopPropagation();
+                  setState(prev => {
+                    const modes: ('off' | 'all' | 'one')[] = ['off', 'all', 'one'];
+                    const nextIndex = (modes.indexOf(prev.repeatMode) + 1) % modes.length;
+                    return { ...prev, repeatMode: modes[nextIndex] };
+                  });
+                }}
+                className={`text-white/70 hover:text-white transition-colors p-2 ${state.repeatMode !== 'off' ? 'text-[#f1c40f]' : ''}`}
+                title={`Repeat: ${state.repeatMode}`}
+              >
+                {state.repeatMode === 'one' ? (
+                   <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v6z"/><text x="12" y="16" fontSize="8" fontWeight="bold" textAnchor="middle" fill="currentColor">1</text></svg>
+                ) : (
+                   <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v6z"/></svg>
+                )}
               </button>
            </div>
         </div>

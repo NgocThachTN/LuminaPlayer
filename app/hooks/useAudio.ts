@@ -207,25 +207,80 @@ export const useAudio = (
   };
 
   const playNext = () => {
-    const totalTracks = playlistItems.length; // Uses the passed 'queue'
-    if (state.currentSongIndex < totalTracks - 1) {
-      handleSongSelect(state.currentSongIndex + 1);
-    } else {
-      setState((prev) => ({ ...prev, isPlaying: false }));
+    const totalTracks = playlistItems.length;
+    if (totalTracks === 0) return;
+
+    // Handle Repeat One (Single Song Loop)
+    if (state.repeatMode === 'one') {
+       if (audioRef.current) {
+          audioRef.current.pause();
+          audioRef.current.currentTime = 0;
+          setState(prev => ({ ...prev, currentTime: 0, isPlaying: true }));
+          setTimeout(() => {
+            audioRef.current?.play().catch(e => {
+                console.error("Replay failed:", e);
+                setState(prev => ({ ...prev, isPlaying: false }));
+            });
+          }, 50);
+       }
+       return;
     }
+
+    let nextIndex = -1;
+
+    // Handle Shuffle
+    if (state.isShuffle) {
+      // Simple random for now (can be improved with history later)
+      do {
+        nextIndex = Math.floor(Math.random() * totalTracks);
+      } while (nextIndex === state.currentSongIndex && totalTracks > 1);
+    } else {
+      // Normal Sequence
+      nextIndex = state.currentSongIndex + 1;
+    }
+
+    // Handle Boundary & Repeat All
+    if (nextIndex >= totalTracks) {
+       if (state.repeatMode === 'all') {
+         nextIndex = 0;
+       } else {
+         // Stop playback
+         setState((prev) => ({ ...prev, isPlaying: false }));
+         return;
+       }
+    }
+
+    // Optimization: If the next song is the SAME as the current song (e.g. 1 song list + Repeat All),
+    // just replay it directly to avoid state update redundancy/rendering issues.
+    if (nextIndex === state.currentSongIndex) {
+       if (audioRef.current) {
+          audioRef.current.pause();
+          audioRef.current.currentTime = 0;
+          setState(prev => ({ ...prev, currentTime: 0, isPlaying: true }));
+          setTimeout(() => {
+            audioRef.current?.play().catch(e => {
+                console.error("Loop replay failed:", e);
+                setState(prev => ({ ...prev, isPlaying: false }));
+            });
+          }, 50);
+       }
+       return;
+    }
+
+    handleSongSelect(nextIndex);
   };
 
   const playPrevious = () => {
     if (audioRef.current && audioRef.current.currentTime > 3) {
       audioRef.current.currentTime = 0;
-      setState((prev) => ({ ...prev, currentTime: 0 }));
-    } else if (state.currentSongIndex > 0) {
-      handleSongSelect(state.currentSongIndex - 1);
     } else {
-        if (audioRef.current) {
-            audioRef.current.currentTime = 0;
-            setState((prev) => ({ ...prev, currentTime: 0 }));
-        }
+      // If shuffle is on, behavior varies. Some apps go back in history, some just go to prev index.
+      // For simplicity, let's keep previous index behavior or loop to end.
+      let prevIndex = state.currentSongIndex - 1;
+      if (prevIndex < 0) {
+         prevIndex = playlistItems.length - 1; // Loop to last
+      }
+      handleSongSelect(prevIndex);
     }
   };
 

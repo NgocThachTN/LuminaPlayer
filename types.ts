@@ -26,6 +26,8 @@ export interface SongState {
   duration: number;
   playlist: File[];
   currentSongIndex: number;
+  repeatMode: 'off' | 'all' | 'one';
+  isShuffle: boolean;
 }
 
 // Album and Artist grouping

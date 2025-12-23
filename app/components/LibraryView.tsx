@@ -37,7 +37,7 @@ interface LibraryViewProps {
   onPlayContext: (item: PlaylistItem, index: number, contextParams: { type: 'playlist' | 'album' | 'artist', id?: string, items: PlaylistItem[] }) => void;
 }
 
-export const LibraryView: React.FC<LibraryViewProps> = ({
+const LibraryViewBase: React.FC<LibraryViewProps> = ({
   viewMode,
   setViewMode,
   playlistItems,
@@ -142,8 +142,8 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   const playlistVirtualizer = useVirtualizer({
     count: playlistData.length,
     getScrollElement: () => playlistScrollRef.current,
-    estimateSize: () => 60, // Estimated row height in px
-    overscan: 5,
+    estimateSize: () => 56, // Fixed height optimization (no dynamic measuring)
+    overscan: 15, // Increased buffer for smoother scrolling
   });
 
   // Albums virtualizer (for grid, estimate based on screen)
@@ -185,7 +185,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
     }
   }, [viewMode, currentSongAlbumKey, albums]);
 
-  // Scroll to current artist
+  // Optimize re-renders
   useEffect(() => {
     if (viewMode === "artists" && currentSongArtist) {
       const artistIndex = artists.findIndex((a) => a.name === currentSongArtist);
@@ -199,6 +199,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
 
   return (
     <div className="w-full h-full relative flex flex-col bg-transparent border-t border-white/5">
+
           {/* Library Navigation Bar */}
             <div className="w-full px-8 pt-6 pb-2 flex items-center justify-center relative z-30 shrink-0 border-b border-transparent">
                {/* Tabs */}
@@ -296,6 +297,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                         height: `${playlistVirtualizer.getTotalSize()}px`,
                         width: '100%',
                         position: 'relative',
+                        contain: 'strict', // Isolate entire list layout
                       }}
                     >
                       {playlistVirtualizer.getVirtualItems().map((virtualRow) => {
@@ -313,17 +315,20 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                           <div
                             key={idx}
                             data-index={idx}
-                            ref={playlistVirtualizer.measureElement}
                             onClick={() => handleSongSelect(idx)}
-                            className={`playlist-item virtual-list-item group flex items-center px-4 py-3 rounded-md cursor-pointer ${
-                              isPlaying ? "active bg-white/5" : ""
+                            className={`playlist-item virtual-list-item group flex items-center px-4 py-3 rounded-md cursor-pointer h-[56px] transition-colors ${
+                              isPlaying ? "active bg-white/5" : "hover:bg-white/5"
                             }`}
                             style={{
                               position: 'absolute',
                               top: 0,
                               left: 0,
                               width: '100%',
+                              height: '56px', // Explicit height
                               transform: `translateY(${virtualRow.start}px)`,
+                              contain: 'strict', // Isolate layout
+                              contentVisibility: 'auto', // Skip off-screen work
+                              willChange: 'transform', // GPU hint
                             }}
                           >
                             {/* Number / Playing Indicator */}
@@ -346,20 +351,6 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
 
                             {/* Song Title & Artwork */}
                             <div className="flex-1 min-w-0 flex items-center gap-4">
-                              <div className="w-10 h-10 rounded shrink-0 overflow-hidden bg-white/5 relative">
-                                {item.metadata?.cover ? (
-                                  <LazyImage
-                                    src={item.metadata.cover}
-                                    alt=""
-                                    className="w-full h-full object-cover"
-                                    placeholderClassName="w-full h-full"
-                                  />
-                                ) : (
-                                  <div className="w-full h-full flex items-center justify-center">
-                                    <svg className="w-5 h-5 text-white/10" fill="currentColor" viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" /></svg>
-                                  </div>
-                                )}
-                              </div>
                               <div className="min-w-0">
                                 <h4 className={`text-sm font-medium tracking-wide truncate ${isPlaying ? 'text-[#f1c40f]' : 'text-white/90'}`}>
                                   {item.metadata?.title || item.name.replace(/\.[^/.]+$/, "")}
@@ -845,3 +836,29 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
     </div>
   );
 };
+
+export const LibraryView = memo(LibraryViewBase, (prev, next) => {
+  // Check if critical props changed
+  if (prev.viewMode !== next.viewMode) return false;
+  
+  // Reference checks for big lists
+  if (prev.playlistItems !== next.playlistItems) return false;
+  if (prev.albums !== next.albums) return false;
+  if (prev.artists !== next.artists) return false;
+  
+  // UI States
+  if (prev.metadataLoaded !== next.metadataLoaded) return false;
+  if (prev.isRestoringLayout !== next.isRestoringLayout) return false;
+  if (prev.selectedAlbum !== next.selectedAlbum) return false;
+  if (prev.selectedArtist !== next.selectedArtist) return false;
+
+  // Check state relevant for view (Index, Playlist, Playing status)
+  // IGNORE currentTime and duration (unless we wanted to show progress bar in list, which we don't)
+  if (prev.state.currentSongIndex !== next.state.currentSongIndex) return false;
+  if (prev.state.isPlaying !== next.state.isPlaying) return false;
+  if (prev.state.playlist !== next.state.playlist) return false;
+  // If metadata changed (e.g. title loaded), we should update
+  if (prev.state.metadata !== next.state.metadata) return false;
+  
+  return true;
+});

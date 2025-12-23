@@ -89,6 +89,13 @@ export const PlayerOverlay: React.FC<PlayerOverlayProps> = ({
     }
   }, [showLyrics, scrollToActiveLine, autoScrollEnabled]);
 
+  // Fix: Close volume popup when collapsing player
+  React.useEffect(() => {
+    if (!isFullScreenPlayer && showVolumePopup) {
+      setShowVolumePopup(false);
+    }
+  }, [isFullScreenPlayer, showVolumePopup, setShowVolumePopup]);
+
   return (
     <>
     <div 
@@ -323,7 +330,11 @@ export const PlayerOverlay: React.FC<PlayerOverlayProps> = ({
             {/* Center Controls */}
             <div className="flex items-center justify-center gap-6">
               {/* Shuffle */}
-              <button className="text-white/50 hover:text-white transition-colors p-2">
+              <button 
+                onClick={() => setState(prev => ({ ...prev, isShuffle: !prev.isShuffle }))}
+                className={`transition-colors p-2 ${state.isShuffle ? 'text-[#f1c40f]' : 'text-white/50 hover:text-white'}`}
+                title="Shuffle"
+              >
                 <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></svg>
               </button>
 
@@ -350,8 +361,20 @@ export const PlayerOverlay: React.FC<PlayerOverlayProps> = ({
               </button>
 
               {/* Repeat */}
-              <button className="text-white/50 hover:text-white transition-colors p-2">
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v6z"/></svg>
+              <button 
+                onClick={() => setState(prev => {
+                  const modes: ('off' | 'all' | 'one')[] = ['off', 'all', 'one'];
+                  const nextIndex = (modes.indexOf(prev.repeatMode) + 1) % modes.length;
+                  return { ...prev, repeatMode: modes[nextIndex] };
+                })}
+                className={`transition-colors p-2 ${state.repeatMode !== 'off' ? 'text-[#f1c40f]' : 'text-white/50 hover:text-white'}`}
+                title={`Repeat: ${state.repeatMode}`}
+              >
+                {state.repeatMode === 'one' ? (
+                   <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v6z"/><text x="12" y="16" fontSize="8" fontWeight="bold" textAnchor="middle" fill="currentColor">1</text></svg>
+                ) : (
+                   <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v6z"/></svg>
+                )}
               </button>
             </div>
 

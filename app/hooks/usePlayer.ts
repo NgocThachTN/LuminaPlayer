@@ -15,6 +15,8 @@ export const usePlayer = () => {
     duration: 0,
     playlist: [], // Legacy playlist support
     currentSongIndex: -1,
+    repeatMode: 'off',
+    isShuffle: false,
   });
 
   const [isLoading, setIsLoading] = useState(false);
