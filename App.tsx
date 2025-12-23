@@ -160,6 +160,7 @@ const App: React.FC = () => {
             stopAutoScroll={lyricsHook.stopAutoScroll}
             resumeAutoScroll={lyricsHook.resumeAutoScroll}
             isLoading={isLoading}
+            hasStarted={lyricsHook.hasStarted}
             // UI Helpers
             setViewMode={uiHook.setViewMode}
             setIsRestoringLayout={uiHook.setIsRestoringLayout}

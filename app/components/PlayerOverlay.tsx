@@ -31,6 +31,7 @@ interface PlayerOverlayProps {
   resumeAutoScroll: () => void;
   isLoading: boolean;
   scrollToActiveLine: () => void;
+  hasStarted: boolean;
   
   // UI helpers
   setViewMode: (mode: any) => void;
@@ -70,6 +71,7 @@ export const PlayerOverlay: React.FC<PlayerOverlayProps> = ({
   resumeAutoScroll,
   isLoading,
   scrollToActiveLine,
+  hasStarted,
   setViewMode,
   setIsRestoringLayout,
   viewMode
@@ -327,7 +329,6 @@ export const PlayerOverlay: React.FC<PlayerOverlayProps> = ({
         <div className={`h-full w-full transform-gpu transition-all duration-300 ease-out ${showLyrics ? 'opacity-100 translate-x-0 scale-100' : 'opacity-0 translate-x-8 scale-95'}`}>
 
 
-
           <LyricsView 
             lyrics={state.lyrics}
             isLoading={isLoading}
@@ -338,6 +339,7 @@ export const PlayerOverlay: React.FC<PlayerOverlayProps> = ({
             lyricsContainerRef={lyricsContainerRef}
             audioRef={audioRef}
             file={state.file}
+            hasStarted={hasStarted}
           />
 
         </div>

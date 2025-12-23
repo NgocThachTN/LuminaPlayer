@@ -5,6 +5,10 @@ import { SongState } from "../types";
 export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioElement>) => {
   const [activeLyricIndex, setActiveLyricIndex] = useState(-1);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
+  
+  // Track if we should initially scroll (prevents scroll before lyrics are visible)
+  const [initialScrollDone, setInitialScrollDone] = useState(false);
+
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
   const lastScrollTimeRef = useRef(0);
   const scrollTimeoutRef = useRef<number | null>(null);
@@ -14,20 +18,9 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
   const activeLyricIndexRef = useRef(activeLyricIndex);
   useEffect(() => { activeLyricIndexRef.current = activeLyricIndex; }, [activeLyricIndex]);
 
-  // Safeguard against stale time values during song transition
+  // Track song identity to reset on song change
   const lastSongUrlRef = useRef(state.url);
-  const ignoreTimeRef = useRef(false);
-
-  // If song URL changes, ignore time updates until time resets
-  if (lastSongUrlRef.current !== state.url) {
-      lastSongUrlRef.current = state.url;
-      ignoreTimeRef.current = true;
-  }
-
-  // If time resets to near 0, stop ignoring
-  if (ignoreTimeRef.current && state.currentTime < 1) {
-      ignoreTimeRef.current = false;
-  }
+  const lastLyricsRef = useRef(state.lyrics);
 
   // Easing function for smooth premium feel (Ease Out Cubic)
   const easeOutCubic = (t: number): number => {
@@ -36,28 +29,37 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
 
   // Helper function to perform the actual scroll
   const performScroll = useCallback((index: number, behavior: ScrollBehavior | "smooth-custom" = "smooth-custom") => {
-     if (lyricsContainerRef.current) {
+     if (lyricsContainerRef.current && index >= 0) {
         const activeElement = lyricsContainerRef.current.children[index] as HTMLElement;
         if (activeElement) {
            const container = lyricsContainerRef.current;
-           let containerHeight = container.clientHeight;
-           
-           if (containerHeight < 200) containerHeight = window.innerHeight * 0.6;
            
            const elementTop = activeElement.offsetTop;
-           const elementHeight = activeElement.clientHeight;
            
-           // Target position
-           const targetScroll = elementTop - containerHeight * 0.3 + elementHeight / 2;
+           // Get the ACTUAL computed padding-top from the container
+           // This ensures we use the exact same value that CSS is using
+           const computedStyle = window.getComputedStyle(container);
+           const paddingTop = parseFloat(computedStyle.paddingTop) || (window.innerHeight * 0.35);
            
-           // Instant or Native Smooth (not used by default anymore)
+           // Target scroll position: Put element at the same position as padding-top
+           const targetScroll = Math.max(0, elementTop - paddingTop);
+           
+           // Get current scroll position
+           const currentScroll = container.scrollTop;
+           
+           // If difference is very small (< 3px), skip scroll to prevent jitter
+           if (Math.abs(targetScroll - currentScroll) < 3) {
+              return;
+           }
+           
+           // Instant or Native Smooth
            if (behavior === "instant" || behavior === "auto") {
                container.scrollTo({ top: targetScroll, behavior: "auto" });
                return;
            }
 
            // Custom Smooth Scroll Optimization
-           const startY = container.scrollTop;
+           const startY = currentScroll;
            const change = targetScroll - startY;
            const startTime = performance.now();
            const duration = 700; // Slower, smoother duration
@@ -81,7 +83,6 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
   }, []);
 
   // Exposed function to force scroll to active line
-  // Uses Ref to ensure we always scroll to the *current* active line even if called from a stale timeout
   const scrollToActiveLine = useCallback((instant = false) => {
      const idx = activeLyricIndexRef.current;
      if (idx >= 0) {
@@ -101,7 +102,7 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
      scrollToActiveLine(false);
   }, [scrollToActiveLine]);
 
-  // Lock auto-scroll when user interacts, and auto-resume after 5s idle
+  // Lock auto-scroll when user interacts, and auto-resume after 4s idle
   const stopAutoScroll = useCallback(() => {
      setAutoScrollEnabled(false);
      
@@ -109,12 +110,12 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
      
      resumeTimeoutRef.current = setTimeout(() => {
          resumeAutoScroll();
-     }, 4000); // 4000-5000ms delay
+     }, 4000);
   }, [resumeAutoScroll]);
 
-  // Optimized lyric tracking with debounced scroll (only for synced lyrics)
+  // CORE: Lyric tracking - updates activeLyricIndex based on currentTime
   useEffect(() => {
-    if (ignoreTimeRef.current || !state.lyrics.isSynced || state.lyrics.synced.length === 0) return;
+    if (!state.lyrics.isSynced || state.lyrics.synced.length === 0) return;
 
     // Add small offset (200ms ahead) so lyrics feel more in sync
     const currentTime = state.currentTime + 0.2;
@@ -122,48 +123,77 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
       (l) => l.time <= currentTime
     );
 
-    if (index !== activeLyricIndex && index >= 0) {
+    // Only update if changed and valid
+    if (index !== activeLyricIndex) {
       setActiveLyricIndex(index);
-
-      // Debounce scroll to avoid excessive calls
-      const now = Date.now();
-      if (now - lastScrollTimeRef.current > 100) {
-        lastScrollTimeRef.current = now;
-
-        if (scrollTimeoutRef.current) {
-          cancelAnimationFrame(scrollTimeoutRef.current);
-        }
-
-        // Double RAF to ensure we run AFTER the layout/paint of the new class state
-        scrollTimeoutRef.current = requestAnimationFrame(() => {
-           requestAnimationFrame(() => {
-               // If this is the first activation (-1 -> index), snap instantly to avoid lag/jump
-               // Otherwise animate smoothly
-               const behavior = activeLyricIndex === -1 ? "instant" : "smooth-custom";
-               
-               // Only auto-scroll if enabled OR if it's the very first load
-               if (autoScrollEnabled || activeLyricIndex === -1) {
-                   performScroll(index, behavior);
-               }
-           });
-        });
-      }
     }
-  }, [state.currentTime, state.lyrics, activeLyricIndex, performScroll, autoScrollEnabled]);
+  }, [state.currentTime, state.lyrics, activeLyricIndex]);
 
-  // Scroll lyrics to top when song changes (track by URL for uniqueness)
+  // CORE: Auto-scroll when activeLyricIndex changes
   useEffect(() => {
-    if (lyricsContainerRef.current) {
-      lyricsContainerRef.current.scrollTop = 0;
-    }
-    setActiveLyricIndex(-1);
-    setAutoScrollEnabled(true); // Reset scroll lock on new song
-    lastScrollTimeRef.current = 0;
+    // Don't scroll if:
+    // - No active lyric (index < 0)
+    // - Auto-scroll disabled by user
+    // - Initial scroll not yet done (lyrics panel may not be visible)
+    if (activeLyricIndex < 0 || !autoScrollEnabled) return;
     
-    // Reset our stale time usage reference
-    lastSongUrlRef.current = state.url;
-    ignoreTimeRef.current = true; // Actively ignore time at start of new URL
+    // If this is the first scroll after song/lyrics change, do it instantly
+    const behavior = !initialScrollDone ? "instant" : "smooth-custom";
+    
+    if (!initialScrollDone) {
+      setInitialScrollDone(true);
+    }
+
+    // Debounce scroll to avoid excessive calls
+    const now = Date.now();
+    if (now - lastScrollTimeRef.current > 80) {
+      lastScrollTimeRef.current = now;
+
+      if (scrollTimeoutRef.current) {
+        cancelAnimationFrame(scrollTimeoutRef.current);
+      }
+
+      // Double RAF to ensure we run AFTER the layout/paint of the new class state
+      scrollTimeoutRef.current = requestAnimationFrame(() => {
+         requestAnimationFrame(() => {
+             performScroll(activeLyricIndex, behavior);
+         });
+      });
+    }
+  }, [activeLyricIndex, autoScrollEnabled, initialScrollDone, performScroll]);
+
+  // Reset states when song URL changes
+  useEffect(() => {
+    if (lastSongUrlRef.current !== state.url) {
+      lastSongUrlRef.current = state.url;
+      
+      // Reset scroll position
+      if (lyricsContainerRef.current) {
+        lyricsContainerRef.current.scrollTop = 0;
+      }
+      
+      // Reset all state
+      setActiveLyricIndex(-1);
+      setAutoScrollEnabled(true);
+      setInitialScrollDone(false);
+      lastScrollTimeRef.current = 0;
+    }
   }, [state.url]);
+
+  // Reset activeLyricIndex when lyrics change (e.g., async load)
+  useEffect(() => {
+    if (lastLyricsRef.current !== state.lyrics) {
+      lastLyricsRef.current = state.lyrics;
+      
+      // Reset scroll position when new lyrics load
+      if (lyricsContainerRef.current) {
+        lyricsContainerRef.current.scrollTop = 0;
+      }
+      
+      setActiveLyricIndex(-1);
+      setInitialScrollDone(false);
+    }
+  }, [state.lyrics]);
 
   // Cleanup
   useEffect(() => {
@@ -171,8 +201,14 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
       if (scrollTimeoutRef.current) {
         cancelAnimationFrame(scrollTimeoutRef.current);
       }
+      if (resumeTimeoutRef.current) {
+        clearTimeout(resumeTimeoutRef.current);
+      }
     };
   }, []);
+
+  // hasStarted is now simply: isPlaying && currentTime > 0
+  const hasStarted = state.isPlaying && state.currentTime > 0;
 
   return {
     activeLyricIndex,
@@ -181,5 +217,6 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
     resumeAutoScroll,
     lyricsContainerRef,
     scrollToActiveLine,
+    hasStarted,
   };
 };

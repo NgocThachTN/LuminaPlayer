@@ -11,6 +11,7 @@ interface LyricsViewProps {
   lyricsContainerRef: React.RefObject<HTMLDivElement>;
   audioRef: React.RefObject<HTMLAudioElement>;
   file: File | null; // Needed for "No Lyrics Found" vs "Select a Track"
+  hasStarted: boolean;
 }
 
 export const LyricsView = memo(({
@@ -22,7 +23,8 @@ export const LyricsView = memo(({
   resumeAutoScroll,
   lyricsContainerRef,
   audioRef,
-  file
+  file,
+  hasStarted
 }: LyricsViewProps) => {
   // Check if we have lyrics to show
   const hasLyrics = lyrics.synced.length > 0 || lyrics.plain.length > 0;
@@ -41,19 +43,34 @@ export const LyricsView = memo(({
   }
 
   if (lyrics.isSynced) {
+    // Safeguard: If activeLyricIndex is out of bounds (e.g. stale from prev song), treat as -1
+    const validatedIndex = (activeLyricIndex >= 0 && activeLyricIndex < lyrics.synced.length) 
+                           ? activeLyricIndex 
+                           : -1;
+    
+    // Use validatedIndex directly - scroll reset is handled by useLyrics hook
+    const effectiveIndex = validatedIndex;
+
+    // Use consistent offset for both CSS and scroll calculations
+    const LYRICS_TOP_OFFSET = '35vh';
+
     return (
       <div className="relative h-full w-full">
         <div
           ref={lyricsContainerRef}
-          className="h-full w-full overflow-y-auto lyrics-scroll pt-[30vh] pb-[50vh] px-6 md:px-12 relative will-change-scroll"
-          style={{ maskImage: 'linear-gradient(to bottom, transparent 0%, black 15%, black 90%, transparent 100%)', WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 15%, black 90%, transparent 100%)' }}
+          className="h-full w-full overflow-y-auto lyrics-scroll pb-[50vh] px-6 md:px-12 relative will-change-scroll"
+          style={{ 
+            paddingTop: LYRICS_TOP_OFFSET,
+            maskImage: 'linear-gradient(to bottom, transparent 0%, black 15%, black 90%, transparent 100%)', 
+            WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 15%, black 90%, transparent 100%)' 
+          }}
           onWheel={stopAutoScroll}
           onTouchMove={stopAutoScroll}
         >
           {lyrics.synced.map((line, idx) => {
-            const distance = idx - activeLyricIndex;
-            const isActive = idx === activeLyricIndex;
-            const isPast = idx < activeLyricIndex;
+            const distance = idx - effectiveIndex;
+            const isActive = idx === effectiveIndex;
+            const isPast = idx < effectiveIndex;
 
             let opacityClass = "opacity-0";
             let blurClass = "blur-0";
@@ -71,7 +88,7 @@ export const LyricsView = memo(({
                scaleClass = "scale-100";
                pointerEvents = "pointer-events-auto";
             } else {
-               const isStart = activeLyricIndex === -1;
+               const isStart = effectiveIndex === -1;
                // Allow 4 lines if start, otherwise 3
                const maxFutureLines = isStart ? 4 : 3;
 
