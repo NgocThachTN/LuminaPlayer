@@ -58,7 +58,7 @@ export const LyricsView = memo(({
       <div className="relative h-full w-full">
         <div
           ref={lyricsContainerRef}
-          className="h-full w-full overflow-y-auto lyrics-scroll pb-[50vh] px-6 md:px-12 relative will-change-scroll"
+          className="h-full w-full overflow-y-auto lyrics-scroll pb-[50vh] pl-2 pr-6 md:pl-4 md:pr-12 relative will-change-scroll"
           style={{ 
             paddingTop: LYRICS_TOP_OFFSET,
             maskImage: 'linear-gradient(to bottom, transparent 0%, black 15%, black 90%, transparent 100%)', 
