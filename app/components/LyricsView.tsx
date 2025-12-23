@@ -1,5 +1,39 @@
-import React, { memo, useEffect, useRef } from 'react';
+import React, { memo, useEffect, useRef, useMemo } from 'react';
 import { SongState } from '../types';
+
+// Helper to lighten a hex color for lyrics visibility
+const lightenColor = (hex: string, amount: number): string => {
+  // Remove # if present
+  hex = hex.replace('#', '');
+  
+  // Parse RGB
+  let r = parseInt(hex.substring(0, 2), 16);
+  let g = parseInt(hex.substring(2, 4), 16);
+  let b = parseInt(hex.substring(4, 6), 16);
+  
+  // Lighten each channel
+  r = Math.min(255, Math.round(r + (255 - r) * amount));
+  g = Math.min(255, Math.round(g + (255 - g) * amount));
+  b = Math.min(255, Math.round(b + (255 - b) * amount));
+  
+  return `rgb(${r}, ${g}, ${b})`;
+};
+
+// Helper to get a tinted white based on dominant color
+const getTintedWhite = (hex: string, tintAmount: number = 0.15): string => {
+  hex = hex.replace('#', '');
+  
+  let r = parseInt(hex.substring(0, 2), 16);
+  let g = parseInt(hex.substring(2, 4), 16);
+  let b = parseInt(hex.substring(4, 6), 16);
+  
+  // Blend with white while keeping color tint
+  r = Math.min(255, Math.round(255 - (255 - r) * tintAmount));
+  g = Math.min(255, Math.round(255 - (255 - g) * tintAmount));
+  b = Math.min(255, Math.round(255 - (255 - b) * tintAmount));
+  
+  return `rgb(${r}, ${g}, ${b})`;
+};
 
 interface LyricsViewProps {
   lyrics: SongState['lyrics'];
@@ -10,9 +44,10 @@ interface LyricsViewProps {
   resumeAutoScroll: () => void;
   lyricsContainerRef: React.RefObject<HTMLDivElement>;
   audioRef: React.RefObject<HTMLAudioElement>;
-  file: File | null; // Needed for "No Lyrics Found" vs "Select a Track"
+  file: File | null;
   hasStarted: boolean;
-  currentTime: number; // Current playback time for start state detection
+  currentTime: number;
+  dominantColor?: string;
 }
 
 export const LyricsView = memo(({
@@ -26,8 +61,18 @@ export const LyricsView = memo(({
   audioRef,
   file,
   hasStarted,
-  currentTime
+  currentTime,
+  dominantColor = '#4a90d9'
 }: LyricsViewProps) => {
+  // Generate dynamic colors based on dominant color
+  const lyricsColors = useMemo(() => {
+    return {
+      active: 'rgb(255, 255, 255)',                  // Pure bright white for active line
+      upcoming: 'rgba(255, 255, 255, 0.45)',         // Dimmed white for upcoming
+      faded: 'rgba(255, 255, 255, 0.3)',             // More faded for distant lines
+      inactive: 'rgba(255, 255, 255, 0.2)',          // Very dim for inactive
+    };
+  }, [dominantColor]);
   // Track previous time to detect seeking to start
   const prevTimeRef = useRef(currentTime);
   const wasAtStartRef = useRef(false);
@@ -159,22 +204,41 @@ export const LyricsView = memo(({
                 // Just passed - fade out
                 opacityClass = "opacity-0"; 
                 scaleClass = "scale-95";
-                blurClass = "blur-sm";
+                blurClass = ""; // Removed blur
               } else if (distance > 0 && distance <= 3) {
                 if (distance === 1) {
                   opacityClass = "opacity-80";
-                  blurClass = "blur-[0.5px]";
                 } else if (distance === 2) {
                   opacityClass = "opacity-60";
-                  blurClass = "blur-[1px]";
                 } else if (distance === 3) {
                   opacityClass = "opacity-40";
-                  blurClass = "blur-[1.5px]";
                 }
                 scaleClass = "scale-100";
                 pointerEvents = "pointer-events-auto";
+                blurClass = ""; // Keep text sharp
               }
               // Else: opacity-0 (hidden)
+            }
+
+            // Determine text color and styling based on state
+            let textColor = lyricsColors.inactive;
+            let fontWeight = 500;
+            let textShadow = 'none';
+            
+            if (isAtStart && idx < 4) {
+              textColor = idx === 0 ? lyricsColors.active : lyricsColors.upcoming;
+              fontWeight = idx === 0 ? 700 : 600;
+              if (idx === 0) textShadow = '0 2px 4px rgba(0,0,0,0.3)'; // Subtle drop shadow instead of glare
+            } else if (isActive) {
+              textColor = lyricsColors.active;
+              fontWeight = 700;
+              textShadow = '0 2px 4px rgba(0,0,0,0.3)'; // Subtle drop shadow for readability
+            } else if (!autoScrollEnabled) {
+              textColor = Math.abs(distance) <= 1 ? lyricsColors.active : lyricsColors.upcoming;
+              fontWeight = Math.abs(distance) <= 1 ? 700 : 600;
+            } else if (distance > 0 && distance <= 3) {
+              textColor = distance === 1 ? lyricsColors.upcoming : lyricsColors.faded;
+              fontWeight = distance === 1 ? 600 : 500;
             }
 
             return (
@@ -184,9 +248,14 @@ export const LyricsView = memo(({
                   audioRef.current &&
                   (audioRef.current.currentTime = line.time)
                 }
-                className={`lyric-item my-4 md:my-6 text-3xl md:text-4xl cursor-pointer select-none transition-all duration-700 ease-[cubic-bezier(0.25,0.46,0.45,0.94)] transform-gpu ${
+                className={`lyric-item my-5 md:my-7 text-2xl md:text-[2.5rem] leading-tight cursor-pointer select-none transition-all duration-500 ease-out transform-gpu tracking-tight ${
                   isActive ? "active-lyric" : ""
                 } ${opacityClass} ${blurClass} ${scaleClass} ${pointerEvents}`}
+                style={{ 
+                  color: textColor,
+                  fontWeight,
+                  textShadow,
+                }}
               >
                 {line.text || "♪"}
               </div>

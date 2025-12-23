@@ -95,22 +95,47 @@ export const PlayerOverlay: React.FC<PlayerOverlayProps> = ({
       className={`fixed inset-0 z-[60] flex flex-col md:flex-row transition-transform duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] ${isFullScreenPlayer ? 'translate-y-0' : 'translate-y-full'}`}
       style={{ backgroundColor: bgColor }} 
     >
-       {/* Blurred Album Cover Background */}
+       {/* Apple Music Style Blurred Album Background */}
        {state.metadata.cover && (
          <div 
            className="absolute inset-0 z-0 overflow-hidden"
            aria-hidden="true"
          >
+           {/* Base layer - heavily blurred album art */}
            <div 
-             className="absolute inset-[-50px] bg-cover bg-center transition-opacity duration-1000"
+             className="absolute inset-[-150px] bg-cover bg-center transition-all duration-[1500ms] ease-out"
              style={{ 
                backgroundImage: `url(${state.metadata.cover})`,
-               filter: 'blur(80px) saturate(1.5) brightness(0.4)',
-               transform: 'scale(1.2)',
+               filter: 'blur(120px) saturate(1.4) brightness(0.6)',
+               transform: 'scale(1.5)',
              }}
            />
-           {/* Dark overlay for better readability */}
-           <div className="absolute inset-0 bg-black/30" />
+           {/* Color accent layer - adds depth and vibrancy */}
+           <div 
+             className="absolute inset-[-80px] bg-cover bg-center mix-blend-overlay opacity-60 transition-all duration-[1500ms]"
+             style={{ 
+               backgroundImage: `url(${state.metadata.cover})`,
+               filter: 'blur(80px) saturate(1.6)',
+               transform: 'scale(1.3)',
+             }}
+           />
+           {/* Subtle grain for smooth color transitions */}
+           <div 
+             className="absolute inset-0 opacity-[0.04] pointer-events-none"
+             style={{
+               backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E")`,
+             }}
+           />
+           {/* Vignette overlay - Apple Music style darkening at edges */}
+           <div 
+             className="absolute inset-0"
+             style={{
+               background: 'radial-gradient(ellipse at center, transparent 0%, rgba(0,0,0,0.4) 50%, rgba(0,0,0,0.8) 100%)',
+             }}
+           />
+           {/* Top-to-bottom gradient for content readability - Darker for accessibility */}
+           <div className="absolute inset-0 bg-black/30 mix-blend-multiply" />
+           <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/60" />
          </div>
        )}
        {/* Collapse Button */}
@@ -359,6 +384,7 @@ export const PlayerOverlay: React.FC<PlayerOverlayProps> = ({
             file={state.file}
             hasStarted={hasStarted}
             currentTime={state.currentTime}
+            dominantColor={dominantColor}
           />
 
         </div>
