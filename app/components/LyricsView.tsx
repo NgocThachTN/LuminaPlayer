@@ -52,7 +52,7 @@ export const LyricsView = memo(({
     const effectiveIndex = validatedIndex;
 
     // Use consistent offset for both CSS and scroll calculations
-    const LYRICS_TOP_OFFSET = '35vh';
+    const LYRICS_TOP_OFFSET = '25vh';
 
     return (
       <div className="relative h-full w-full">
