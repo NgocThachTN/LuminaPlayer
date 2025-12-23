@@ -1,5 +1,6 @@
 
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, memo, useCallback } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { ViewMode, PlaylistItem, AlbumInfo, ArtistInfo, SongState } from '../types';
 import { LazyImage } from '../../components/LazyImage';
 
@@ -116,52 +117,83 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
     return artists.find((a) => a.name === selectedArtist) || null;
   }, [selectedArtist, artists]);
 
+  // Helper function - memoized
+  const formatDuration = useCallback((d?: number) => {
+    if (!d) return "--:--";
+    const mins = Math.floor(d / 60);
+    const secs = Math.floor(d % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  }, []);
 
-  // Scrolls
+  // Scroll refs for virtualization
+  const playlistScrollRef = useRef<HTMLDivElement>(null);
+  const albumsScrollRef = useRef<HTMLDivElement>(null);
+  const artistsScrollRef = useRef<HTMLDivElement>(null);
+
+  // Playlist items for virtualization
+  const playlistData = React.useMemo(() => 
+    playlistItems.length > 0
+      ? playlistItems
+      : state.playlist.map((f) => ({ file: f, name: f.name })),
+    [playlistItems, state.playlist]
+  );
+
+  // Playlist virtualizer
+  const playlistVirtualizer = useVirtualizer({
+    count: playlistData.length,
+    getScrollElement: () => playlistScrollRef.current,
+    estimateSize: () => 60, // Estimated row height in px
+    overscan: 5,
+  });
+
+  // Albums virtualizer (for grid, estimate based on screen)
+  const albumsVirtualizer = useVirtualizer({
+    count: albums.length,
+    getScrollElement: () => albumsScrollRef.current,
+    estimateSize: () => 240, // Album card height estimate
+    overscan: 3,
+  });
+
+  // Artists virtualizer
+  const artistsVirtualizer = useVirtualizer({
+    count: artists.length,
+    getScrollElement: () => artistsScrollRef.current,
+    estimateSize: () => 72, // Artist row height
+    overscan: 5,
+  });
+
+  // Scrolls (updated for virtualization)
   useEffect(() => {
     if (viewMode === "playlist" && state.currentSongIndex >= 0) {
       requestAnimationFrame(() => {
-        if (!playlistContainerRef.current) return;
-        // +1 because the header is now the first child
-        const currentItem = playlistContainerRef.current.children[state.currentSongIndex + 1] as HTMLElement;
-        if (currentItem) {
-          currentItem.scrollIntoView({ behavior: "instant", block: "center" });
-        }
+        playlistVirtualizer.scrollToIndex(state.currentSongIndex, { align: 'center' });
       });
     }
-  }, [viewMode]);
+  }, [viewMode, state.currentSongIndex]);
 
    // Scroll to current album when albums view opens
    useEffect(() => {
     if (viewMode === "albums" && currentSongAlbumKey) {
-      requestAnimationFrame(() => {
-        if (!albumsContainerRef.current) return;
-        const albumIndex = albums.findIndex(
-          (a) => `${a.name}__${a.artist}` === currentSongAlbumKey
-        );
-        if (albumIndex >= 0) {
-          const albumElement = albumsContainerRef.current.children[albumIndex] as HTMLElement;
-          if (albumElement) {
-            albumElement.scrollIntoView({ behavior: "instant", block: "center" });
-          }
-        }
-      });
+      const albumIndex = albums.findIndex(
+        (a) => `${a.name}__${a.artist}` === currentSongAlbumKey
+      );
+      if (albumIndex >= 0) {
+        requestAnimationFrame(() => {
+          albumsVirtualizer.scrollToIndex(albumIndex, { align: 'center' });
+        });
+      }
     }
   }, [viewMode, currentSongAlbumKey, albums]);
 
   // Scroll to current artist
   useEffect(() => {
     if (viewMode === "artists" && currentSongArtist) {
-      requestAnimationFrame(() => {
-        if (!artistsContainerRef.current) return;
-        const artistIndex = artists.findIndex((a) => a.name === currentSongArtist);
-        if (artistIndex >= 0) {
-          const artistElement = artistsContainerRef.current.children[artistIndex] as HTMLElement;
-          if (artistElement) {
-            artistElement.scrollIntoView({ behavior: "instant", block: "center" });
-          }
-        }
-      });
+      const artistIndex = artists.findIndex((a) => a.name === currentSongArtist);
+      if (artistIndex >= 0) {
+        requestAnimationFrame(() => {
+          artistsVirtualizer.scrollToIndex(artistIndex, { align: 'center' });
+        });
+      }
     }
   }, [viewMode, currentSongArtist, artists]);
 
@@ -243,12 +275,12 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                </div>
             </div>
           {viewMode === "playlist" ? (
-            <div className={`flex flex-col flex-1 min-h-0 content-visibility-auto transition-opacity duration-300 ${isRestoringLayout ? "opacity-0" : "opacity-100"}`}>
+            <div className={`flex flex-col flex-1 min-h-0 transition-opacity duration-300 ${isRestoringLayout ? "opacity-0" : "opacity-100"}`}>
               {!isRestoringLayout && (
-                <div className="flex-1 w-full overflow-y-auto lyrics-scroll p-8 md:px-16">
+                <div ref={playlistScrollRef} className="flex-1 w-full overflow-y-auto lyrics-scroll p-8 md:px-16">
                   <div ref={playlistContainerRef} className="flex flex-col">
-                    {/* Table Header (Now Scrolls) */}
-                    <div className="flex items-center px-4 py-3 border-b border-white/5 text-[10px] font-bold uppercase tracking-[0.2em] text-white/30 bg-transparent mb-2">
+                    {/* Table Header */}
+                    <div className="flex items-center px-4 py-3 border-b border-white/5 text-[10px] font-bold uppercase tracking-[0.2em] text-white/30 bg-transparent mb-2 sticky top-0 z-10 backdrop-blur-sm">
                       <div className="w-12 shrink-0">#</div>
                       <div className="flex-1 min-w-0 pr-4">Song</div>
                       <div className="w-[180px] hidden md:block px-4">Artist</div>
@@ -256,107 +288,117 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                       <div className="w-16 text-right">Time</div>
                       <div className="w-10 shrink-0"></div>
                     </div>
-                    {(playlistItems.length > 0
-                      ? playlistItems
-                      : state.playlist.map((f) => ({ file: f, name: f.name }))
-                    ).map((item, idx) => {
-                      const currentSong = state.playlist[state.currentSongIndex];
-                      const isPlaying = currentSong && (
-                        (item.path && item.path === currentSong.path) ||
-                        (item.name === currentSong.name)
-                      );
-                      const duration = item.metadata?.duration;
-                      const formatDuration = (d?: number) => {
-                        if (!d) return "--:--";
-                        const mins = Math.floor(d / 60);
-                        const secs = Math.floor(d % 60);
-                        return `${mins}:${secs.toString().padStart(2, '0')}`;
-                      };
+                    
+                    {/* Virtualized Playlist Items */}
+                    <div
+                      style={{
+                        height: `${playlistVirtualizer.getTotalSize()}px`,
+                        width: '100%',
+                        position: 'relative',
+                      }}
+                    >
+                      {playlistVirtualizer.getVirtualItems().map((virtualRow) => {
+                        const idx = virtualRow.index;
+                        const item = playlistData[idx];
+                        if (!item) return null;
+                        
+                        const currentSong = state.playlist[state.currentSongIndex];
+                        const isPlaying = currentSong && (
+                          (item.path && item.path === currentSong.path) ||
+                          (item.name === currentSong.name)
+                        );
 
-                      return (
-                        <div
-                          key={idx}
-                          onClick={() => handleSongSelect(idx)}
-                          className={`playlist-item group flex items-center px-4 py-3 rounded-md cursor-pointer transition-all duration-200 hover:bg-white/5 ${
-                            isPlaying ? "active bg-white/5" : ""
-                          }`}
-                        >
-                          {/* Number / Playing Indicator */}
-                          <div className="w-12 shrink-0 flex items-center">
-                            {isPlaying ? (
-                              <div className="playing-indicator-v2">
-                                <span></span>
-                                <span></span>
-                                <span></span>
-                              </div>
-                            ) : (
-                              <span className="text-xs font-mono text-white/20 group-hover:hidden">
-                                {String(idx + 1).padStart(2, "0")}
-                              </span>
-                            )}
-                            {!isPlaying && (
-                              <svg className="w-4 h-4 text-white/60 hidden group-hover:block" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-                            )}
-                          </div>
-
-                          {/* Song Title & Artwork */}
-                          <div className="flex-1 min-w-0 flex items-center gap-4">
-                            <div className="w-10 h-10 rounded shrink-0 overflow-hidden bg-white/5 relative shadow-lg">
-                              {item.metadata?.cover ? (
-                                <LazyImage
-                                  src={item.metadata.cover}
-                                  alt=""
-                                  className="w-full h-full object-cover"
-                                  placeholderClassName="w-full h-full"
-                                />
-                              ) : (
-                                <div className="w-full h-full flex items-center justify-center">
-                                  <svg className="w-5 h-5 text-white/10" fill="currentColor" viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" /></svg>
+                        return (
+                          <div
+                            key={idx}
+                            data-index={idx}
+                            ref={playlistVirtualizer.measureElement}
+                            onClick={() => handleSongSelect(idx)}
+                            className={`playlist-item virtual-list-item group flex items-center px-4 py-3 rounded-md cursor-pointer ${
+                              isPlaying ? "active bg-white/5" : ""
+                            }`}
+                            style={{
+                              position: 'absolute',
+                              top: 0,
+                              left: 0,
+                              width: '100%',
+                              transform: `translateY(${virtualRow.start}px)`,
+                            }}
+                          >
+                            {/* Number / Playing Indicator */}
+                            <div className="w-12 shrink-0 flex items-center">
+                              {isPlaying ? (
+                                <div className="playing-indicator-v2">
+                                  <span></span>
+                                  <span></span>
+                                  <span></span>
                                 </div>
+                              ) : (
+                                <span className="text-xs font-mono text-white/20 group-hover:hidden">
+                                  {String(idx + 1).padStart(2, "0")}
+                                </span>
                               )}
-                              {isPlaying && <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                                <div className="w-2 h-2 rounded-full bg-white animate-pulse"></div>
-                              </div>}
+                              {!isPlaying && (
+                                <svg className="w-4 h-4 text-white/60 hidden group-hover:block" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                              )}
                             </div>
-                            <div className="min-w-0">
-                              <h4 className={`text-sm font-medium tracking-wide truncate ${isPlaying ? 'text-[#f1c40f]' : 'text-white/90'}`}>
-                                {item.metadata?.title || item.name.replace(/\.[^/.]+$/, "")}
-                              </h4>
+
+                            {/* Song Title & Artwork */}
+                            <div className="flex-1 min-w-0 flex items-center gap-4">
+                              <div className="w-10 h-10 rounded shrink-0 overflow-hidden bg-white/5 relative">
+                                {item.metadata?.cover ? (
+                                  <LazyImage
+                                    src={item.metadata.cover}
+                                    alt=""
+                                    className="w-full h-full object-cover"
+                                    placeholderClassName="w-full h-full"
+                                  />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center">
+                                    <svg className="w-5 h-5 text-white/10" fill="currentColor" viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" /></svg>
+                                  </div>
+                                )}
+                              </div>
+                              <div className="min-w-0">
+                                <h4 className={`text-sm font-medium tracking-wide truncate ${isPlaying ? 'text-[#f1c40f]' : 'text-white/90'}`}>
+                                  {item.metadata?.title || item.name.replace(/\.[^/.]+$/, "")}
+                                </h4>
+                              </div>
+                            </div>
+
+                            {/* Artist */}
+                            <div className="w-[180px] hidden md:block px-4 truncate text-sm text-white/50">
+                              {item.metadata?.artist || "Unknown Artist"}
+                            </div>
+
+                            {/* Album */}
+                            <div className="w-[220px] hidden lg:block px-4 truncate text-sm text-white/40">
+                              {item.metadata?.album || "Unknown Album"}
+                            </div>
+
+                            {/* Duration */}
+                            <div className="w-16 text-right text-xs font-mono text-white/30">
+                              {formatDuration(item.metadata?.duration)}
+                            </div>
+
+                            {/* Actions */}
+                            <div className="w-10 shrink-0 flex justify-end opacity-0 group-hover:opacity-100">
+                                <button className="text-white/40 hover:text-white">
+                                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 10c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm12 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-6 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
+                                </button>
                             </div>
                           </div>
-
-                          {/* Artist */}
-                          <div className="w-[180px] hidden md:block px-4 truncate text-sm text-white/50 group-hover:text-white/70 transition-colors">
-                            {item.metadata?.artist || "Unknown Artist"}
-                          </div>
-
-                          {/* Album */}
-                          <div className="w-[220px] hidden lg:block px-4 truncate text-sm text-white/40 group-hover:text-white/60 transition-colors">
-                            {item.metadata?.album || "Unknown Album"}
-                          </div>
-
-                          {/* Duration */}
-                          <div className="w-16 text-right text-xs font-mono text-white/30 group-hover:text-white/60">
-                            {formatDuration(duration)}
-                          </div>
-
-                          {/* Actions */}
-                          <div className="w-10 shrink-0 flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button className="text-white/40 hover:text-white">
-                                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 10c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm12 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-6 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
-                              </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                    {playlistItems.length === 0 &&
-                      state.playlist.length === 0 && (
-                        <div className="flex flex-col items-center justify-center py-16 gap-4">
-                          <svg className="w-16 h-16 text-white/10" fill="currentColor" viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" /></svg>
-                          <p className="text-white/20 text-sm uppercase tracking-widest">No tracks in playlist</p>
-                          <p className="text-white/10 text-xs">Import a folder or track to get started</p>
-                        </div>
-                      )}
+                        );
+                      })}
+                    </div>
+                    
+                    {playlistData.length === 0 && (
+                      <div className="flex flex-col items-center justify-center py-16 gap-4">
+                        <svg className="w-16 h-16 text-white/10" fill="currentColor" viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" /></svg>
+                        <p className="text-white/20 text-sm uppercase tracking-widest">No tracks in playlist</p>
+                        <p className="text-white/10 text-xs">Import a folder or track to get started</p>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

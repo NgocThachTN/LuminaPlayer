@@ -177,39 +177,22 @@
             transform: scale(1.05);
             box-shadow: 0 0 30px rgba(255, 255, 255, 0.2);
         }
-        /* Playlist item animations */
+        /* Playlist item - optimized for scroll performance */
         .playlist-item {
             position: relative;
             background: transparent;
             border: 1px solid var(--border);
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            /* Reduced: only transition background on hover */
+            transition: background-color 0.15s ease;
             overflow: hidden;
-        }
-        .playlist-item::before {
-            content: '';
-            position: absolute;
-            left: 0;
-            top: 0;
-            height: 100%;
-            width: 3px;
-            background: linear-gradient(180deg, #fff 0%, rgba(255,255,255,0.3) 100%);
-            transform: scaleY(0);
-            transition: transform 0.3s ease;
+            contain: layout style paint;
         }
         .playlist-item:hover {
-            background: rgba(255, 255, 255, 0.03);
-            border-color: var(--border-hover);
-            transform: translateX(4px);
-        }
-        .playlist-item:hover::before {
-            transform: scaleY(1);
+            background: rgba(255, 255, 255, 0.05);
         }
         .playlist-item.active {
             background: rgba(255, 255, 255, 0.05);
             border-color: rgba(255, 255, 255, 0.2);
-        }
-        .playlist-item.active::before {
-            transform: scaleY(1);
         }
         /* New Compact Playing Indicator */
         .playing-indicator-v2 {
@@ -386,11 +369,10 @@
                 grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
             }
         }
+        /* Album card - optimized for scroll performance */
         .album-card {
-            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        .album-card:hover {
-            transform: translateY(-4px);
+            /* Removed hover transform for scroll performance */
+            contain: layout style paint;
         }
         .album-card-cover {
             position: relative;
@@ -399,10 +381,6 @@
             overflow: hidden;
             background: var(--bg-secondary);
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
-            transition: box-shadow 0.3s ease;
-        }
-        .album-card:hover .album-card-cover {
-            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.1);
         }
         .album-card-overlay {
             position: absolute;
@@ -412,18 +390,13 @@
             align-items: center;
             justify-content: center;
             opacity: 0;
-            transition: opacity 0.3s ease;
+            transition: opacity 0.15s ease;
         }
         .album-card:hover .album-card-overlay {
             opacity: 1;
         }
         .album-card-overlay svg {
             filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.5));
-            transform: scale(0.8);
-            transition: transform 0.3s ease;
-        }
-        .album-card:hover .album-card-overlay svg {
-            transform: scale(1);
         }
         .album-card.album-playing {
             position: relative;
@@ -437,83 +410,38 @@
             border-radius: 6px;
         }
 
-        /* Artist Item Styles */
+        /* Artist Item - optimized for scroll performance */
         .artist-item {
             position: relative;
             background: transparent;
             border: 1px solid var(--border);
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: background-color 0.15s ease;
             overflow: hidden;
-        }
-        .artist-item::before {
-            content: '';
-            position: absolute;
-            left: 0;
-            top: 0;
-            height: 100%;
-            width: 3px;
-            background: linear-gradient(180deg, #fff 0%, rgba(255,255,255,0.3) 100%);
-            transform: scaleY(0);
-            transition: transform 0.3s ease;
+            contain: layout style paint;
         }
         .artist-item:hover {
-            background: rgba(255, 255, 255, 0.03);
-            border-color: var(--border-hover);
-            transform: translateX(4px);
-        }
-        .artist-item:hover::before {
-            transform: scaleY(1);
+            background: rgba(255, 255, 255, 0.05);
         }
 
         /* Performance optimizations for Electron Windows */
         .virtual-list-item {
             content-visibility: auto;
             contain-intrinsic-size: 0 72px;
-            contain: layout style paint;
-        }
-        .album-card {
-            content-visibility: auto;
-            contain-intrinsic-size: 200px 260px;
-            contain: layout style paint;
-        }
-        /* GPU acceleration for smooth transitions */
-        .playlist-item, .artist-item, .album-card {
-            transform: translateZ(0);
-            backface-visibility: hidden;
         }
         /* Optimize scrolling containers */
         .lyrics-scroll {
             -webkit-overflow-scrolling: touch;
-            contain: strict;
-        }
-        /* Reduce repaints - only apply will-change on interaction */
-        .playlist-item:hover, .artist-item:hover {
-            will-change: transform;
+            will-change: scroll-position;
         }
         /* Global performance hints */
         * {
-            /* Disable subpixel antialiasing for better perf */
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
         }
 
-        /* Shimmer loading animation for images */
-        @keyframes shimmer {
-            0% {
-                transform: translateX(-100%);
-            }
-            100% {
-                transform: translateX(100%);
-            }
-        }
+        /* Shimmer disabled - using static placeholder for performance */
         .shimmer-effect {
-            background: linear-gradient(
-                90deg,
-                transparent 0%,
-                rgba(255, 255, 255, 0.04) 50%,
-                transparent 100%
-            );
-            animation: shimmer 1.2s ease-in-out infinite;
+            display: none;
         }
         /* Custom Popup Animation */
         @keyframes slideUpFade {

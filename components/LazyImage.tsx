@@ -7,7 +7,7 @@ interface LazyImageProps {
   placeholderClassName?: string;
 }
 
-// Memoized component with smooth loading animation and IntersectionObserver
+// Optimized memoized component with faster loading animation
 export const LazyImage: React.FC<LazyImageProps> = memo(
   ({ src, alt, className = "", placeholderClassName = "" }) => {
     const [isLoaded, setIsLoaded] = useState(false);
@@ -27,8 +27,8 @@ export const LazyImage: React.FC<LazyImageProps> = memo(
           });
         },
         {
-          rootMargin: "200px", // Load before it comes into view
-          threshold: 0.1,
+          rootMargin: "100px", // Reduced from 200px
+          threshold: 0.01,
         }
       );
 
@@ -48,32 +48,26 @@ export const LazyImage: React.FC<LazyImageProps> = memo(
         ref={imgRef}
         className={`relative overflow-hidden ${placeholderClassName}`}
       >
-        {/* Animated shimmer placeholder */}
-        <div
-          className={`absolute inset-0 transition-opacity duration-300 ease-out ${
-            isLoaded ? "opacity-0" : "opacity-100"
-          }`}
-        >
-          <div className="absolute inset-0 bg-neutral-800" />
-          <div className="absolute inset-0 shimmer-effect" />
-          <div className="absolute inset-0 flex items-center justify-center">
+        {/* Static placeholder - no animation for better performance */}
+        {!isLoaded && (
+          <div className="absolute inset-0 bg-neutral-800 flex items-center justify-center">
             <svg
-              className="w-8 h-8 text-white/10"
+              className="w-6 h-6 text-white/10"
               fill="currentColor"
               viewBox="0 0 24 24"
             >
               <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
             </svg>
           </div>
-        </div>
+        )}
 
-        {/* Image with smooth scale + fade animation */}
+        {/* Image with faster fade animation */}
         {isVisible && (
           <img
             src={src}
             alt={alt}
-            className={`${className} transition-all duration-300 ease-out ${
-              isLoaded ? "opacity-100 scale-100" : "opacity-0 scale-105"
+            className={`${className} transition-opacity duration-150 ease-out ${
+              isLoaded ? "opacity-100" : "opacity-0"
             }`}
             onLoad={() => setIsLoaded(true)}
             decoding="async"
@@ -82,5 +76,7 @@ export const LazyImage: React.FC<LazyImageProps> = memo(
         )}
       </div>
     );
-  }
+  },
+  // Custom comparison - only re-render if src changes
+  (prevProps, nextProps) => prevProps.src === nextProps.src
 );
