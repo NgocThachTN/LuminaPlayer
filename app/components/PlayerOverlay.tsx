@@ -95,6 +95,24 @@ export const PlayerOverlay: React.FC<PlayerOverlayProps> = ({
       className={`fixed inset-0 z-[60] flex flex-col md:flex-row transition-transform duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] ${isFullScreenPlayer ? 'translate-y-0' : 'translate-y-full'}`}
       style={{ backgroundColor: bgColor }} 
     >
+       {/* Blurred Album Cover Background */}
+       {state.metadata.cover && (
+         <div 
+           className="absolute inset-0 z-0 overflow-hidden"
+           aria-hidden="true"
+         >
+           <div 
+             className="absolute inset-[-50px] bg-cover bg-center transition-opacity duration-1000"
+             style={{ 
+               backgroundImage: `url(${state.metadata.cover})`,
+               filter: 'blur(80px) saturate(1.5) brightness(0.4)',
+               transform: 'scale(1.2)',
+             }}
+           />
+           {/* Dark overlay for better readability */}
+           <div className="absolute inset-0 bg-black/30" />
+         </div>
+       )}
        {/* Collapse Button */}
        <button 
          onClick={() => {
