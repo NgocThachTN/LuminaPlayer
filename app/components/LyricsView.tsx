@@ -191,9 +191,10 @@ export const LyricsView = memo(({
             // PRIORITY 3: User browsing mode (auto-scroll disabled)
             else if (!autoScrollEnabled) {
               const absDist = Math.abs(distance);
-              if (absDist <= 1) opacityClass = "opacity-100";
-              else if (absDist <= 4) opacityClass = "opacity-75"; 
-              else opacityClass = "opacity-40";
+              if (absDist === 0) opacityClass = "opacity-100";
+              else if (absDist <= 2) opacityClass = "opacity-75"; 
+              else if (absDist <= 5) opacityClass = "opacity-50";
+              else opacityClass = "opacity-30";
               
               scaleClass = "scale-100";
               pointerEvents = "pointer-events-auto";
@@ -234,8 +235,8 @@ export const LyricsView = memo(({
               fontWeight = 700;
               textShadow = '0 2px 4px rgba(0,0,0,0.3)'; // Subtle drop shadow for readability
             } else if (!autoScrollEnabled) {
-              textColor = Math.abs(distance) <= 1 ? lyricsColors.active : lyricsColors.upcoming;
-              fontWeight = Math.abs(distance) <= 1 ? 700 : 600;
+              textColor = distance === 0 ? lyricsColors.active : lyricsColors.upcoming;
+              fontWeight = distance === 0 ? 700 : 600;
             } else if (distance > 0 && distance <= 3) {
               textColor = distance === 1 ? lyricsColors.upcoming : lyricsColors.faded;
               fontWeight = distance === 1 ? 600 : 500;
