@@ -276,18 +276,19 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
             </div>
           {viewMode === "playlist" ? (
             <div className={`flex flex-col flex-1 min-h-0 transition-opacity duration-300 ${isRestoringLayout ? "opacity-0" : "opacity-100"}`}>
+              {/* Table Header - Fixed outside scroll container */}
+              <div className="flex items-center px-4 py-2 mt-2 border-b border-white/5 text-[10px] font-bold uppercase tracking-[0.2em] text-white/30 bg-transparent shrink-0 mx-8 md:mx-16">
+                <div className="w-12 shrink-0">#</div>
+                <div className="flex-1 min-w-0 pr-4">Song</div>
+                <div className="w-[180px] hidden md:block px-4">Artist</div>
+                <div className="w-[220px] hidden lg:block px-4">Album</div>
+                <div className="w-16 text-right">Time</div>
+                <div className="w-10 shrink-0"></div>
+              </div>
+              
               {!isRestoringLayout && (
-                <div ref={playlistScrollRef} className="flex-1 w-full overflow-y-auto lyrics-scroll p-8 md:px-16">
+                <div ref={playlistScrollRef} className="flex-1 w-full overflow-y-auto lyrics-scroll px-8 md:px-16 pb-8">
                   <div ref={playlistContainerRef} className="flex flex-col">
-                    {/* Table Header */}
-                    <div className="flex items-center px-4 py-3 border-b border-white/5 text-[10px] font-bold uppercase tracking-[0.2em] text-white/30 bg-transparent mb-2 sticky top-0 z-10 backdrop-blur-sm">
-                      <div className="w-12 shrink-0">#</div>
-                      <div className="flex-1 min-w-0 pr-4">Song</div>
-                      <div className="w-[180px] hidden md:block px-4">Artist</div>
-                      <div className="w-[220px] hidden lg:block px-4">Album</div>
-                      <div className="w-16 text-right">Time</div>
-                      <div className="w-10 shrink-0"></div>
-                    </div>
                     
                     {/* Virtualized Playlist Items */}
                     <div
