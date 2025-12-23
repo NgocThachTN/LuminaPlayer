@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import React, { memo, useEffect, useRef } from 'react';
 import { SongState } from '../types';
 
 interface LyricsViewProps {
@@ -12,6 +12,7 @@ interface LyricsViewProps {
   audioRef: React.RefObject<HTMLAudioElement>;
   file: File | null; // Needed for "No Lyrics Found" vs "Select a Track"
   hasStarted: boolean;
+  currentTime: number; // Current playback time for start state detection
 }
 
 export const LyricsView = memo(({
@@ -24,8 +25,31 @@ export const LyricsView = memo(({
   lyricsContainerRef,
   audioRef,
   file,
-  hasStarted
+  hasStarted,
+  currentTime
 }: LyricsViewProps) => {
+  // Track previous time to detect seeking to start
+  const prevTimeRef = useRef(currentTime);
+  const wasAtStartRef = useRef(false);
+  
+  // Reset scroll when seeking to near start - more aggressive detection
+  useEffect(() => {
+    const prevTime = prevTimeRef.current;
+    prevTimeRef.current = currentTime;
+    
+    // Reset scroll if:
+    // 1. We jumped backward by more than 3 seconds to near start (<3s)
+    // 2. OR we just entered start state (currentTime < 2 but wasn't before)
+    const bigJumpToStart = (prevTime - currentTime > 3) && currentTime < 3;
+    const justEnteredStart = currentTime < 2 && prevTime >= 2;
+    
+    if (bigJumpToStart || justEnteredStart) {
+      if (lyricsContainerRef.current) {
+        lyricsContainerRef.current.scrollTop = 0;
+      }
+    }
+  }, [currentTime, lyricsContainerRef]);
+  
   // Check if we have lyrics to show
   const hasLyrics = lyrics.synced.length > 0 || lyrics.plain.length > 0;
 
@@ -43,13 +67,31 @@ export const LyricsView = memo(({
   }
 
   if (lyrics.isSynced) {
-    // Safeguard: If activeLyricIndex is out of bounds (e.g. stale from prev song), treat as -1
-    const validatedIndex = (activeLyricIndex >= 0 && activeLyricIndex < lyrics.synced.length) 
-                           ? activeLyricIndex 
-                           : -1;
+    // Calculate lyric index directly from currentTime for reliability
+    // This makes the component self-sufficient during fast seeking
+    const calculateIndexFromTime = () => {
+      if (currentTime < 2) return -1; // Start state for first 2 seconds
+      
+      // Find the last lyric that should be active at currentTime
+      const adjustedTime = currentTime + 0.2; // 200ms ahead for sync feel
+      for (let i = lyrics.synced.length - 1; i >= 0; i--) {
+        if (lyrics.synced[i].time <= adjustedTime) {
+          return i;
+        }
+      }
+      return -1;
+    };
     
-    // Use validatedIndex directly - scroll reset is handled by useLyrics hook
-    const effectiveIndex = validatedIndex;
+    // Use calculated index as primary
+    const calculatedIndex = calculateIndexFromTime();
+    const effectiveIndex = calculatedIndex;
+    const isAtStart = effectiveIndex === -1;
+
+    // FORCE scroll to top on EVERY render when at start state
+    // This is intentionally aggressive to ensure correct position
+    if (isAtStart && lyricsContainerRef.current && lyricsContainerRef.current.scrollTop !== 0) {
+      lyricsContainerRef.current.scrollTop = 0;
+    }
 
     // Use consistent offset for both CSS and scroll calculations
     const LYRICS_TOP_OFFSET = '26vh';
@@ -70,70 +112,69 @@ export const LyricsView = memo(({
           {lyrics.synced.map((line, idx) => {
             const distance = idx - effectiveIndex;
             const isActive = idx === effectiveIndex;
-            const isPast = idx < effectiveIndex;
 
             let opacityClass = "opacity-0";
             let blurClass = "blur-0";
             let scaleClass = "scale-95";
             let pointerEvents = "pointer-events-none";
 
-            // If auto-scroll is disabled, user is manually browsing
-            // Show all lines more clearly (like Apple Music 'browse' mode)
-            if (!autoScrollEnabled) {
-               const absDist = Math.abs(distance);
-               if (absDist <= 1) opacityClass = "opacity-100";
-               else if (absDist <= 4) opacityClass = "opacity-75"; 
-               else opacityClass = "opacity-40";
-               
-               scaleClass = "scale-100";
-               pointerEvents = "pointer-events-auto";
-            } else {
-               // Check if we're in "start" state (no active lyric yet)
-               const isStart = effectiveIndex === -1;
-               
-               // When in start state, show first 4 lyrics
-               // When playing, show 3 upcoming lyrics
-               const maxFutureLines = isStart ? 4 : 3;
-
-               if (isActive) {
-                   opacityClass = "opacity-100";
-                   scaleClass = "scale-110";
-                   pointerEvents = "pointer-events-auto";
-                   blurClass = "blur-0";
-               } else if (isStart && idx < 4) {
-                   // In start mode, show first 4 lyrics clearly
-                   if (idx === 0) {
-                      opacityClass = "opacity-100";
-                      scaleClass = "scale-105";
-                   } else if (idx === 1) {
-                      opacityClass = "opacity-90";
-                   } else if (idx === 2) {
-                      opacityClass = "opacity-80";
-                   } else {
-                      opacityClass = "opacity-60";
-                   }
-                   scaleClass = idx === 0 ? "scale-105" : "scale-100";
-                   pointerEvents = "pointer-events-auto";
-               } else if (distance === -1) {
-                   // The line just passed - Blur it out as it fades
-                   opacityClass = "opacity-0"; 
-                   scaleClass = "scale-95";
-                   blurClass = "blur-sm";
-               } else if (distance > 0 && distance <= maxFutureLines) {
-                   if (distance === 1) {
-                      opacityClass = "opacity-80";
-                      blurClass = "blur-[0.5px]";
-                   } else if (distance === 2) {
-                      opacityClass = "opacity-60";
-                      blurClass = "blur-[1px]";
-                   } else if (distance === 3) {
-                      opacityClass = "opacity-40";
-                      blurClass = "blur-[1.5px]";
-                   }
-                   scaleClass = "scale-100";
-                   pointerEvents = "pointer-events-auto";
-               }
-               // Else defaults: opacity-0, blur-0 (optimization), scale-95
+            // PRIORITY 1: Start state - always show first 4 lyrics regardless of other conditions
+            if (isAtStart && idx < 4) {
+              if (idx === 0) {
+                opacityClass = "opacity-100";
+                scaleClass = "scale-105";
+              } else if (idx === 1) {
+                opacityClass = "opacity-90";
+                scaleClass = "scale-100";
+              } else if (idx === 2) {
+                opacityClass = "opacity-80";
+                scaleClass = "scale-100";
+              } else {
+                opacityClass = "opacity-60";
+                scaleClass = "scale-100";
+              }
+              blurClass = "blur-0";
+              pointerEvents = "pointer-events-auto";
+            }
+            // PRIORITY 2: Active lyric (when not at start)
+            else if (isActive) {
+              opacityClass = "opacity-100";
+              scaleClass = "scale-110";
+              pointerEvents = "pointer-events-auto";
+              blurClass = "blur-0";
+            }
+            // PRIORITY 3: User browsing mode (auto-scroll disabled)
+            else if (!autoScrollEnabled) {
+              const absDist = Math.abs(distance);
+              if (absDist <= 1) opacityClass = "opacity-100";
+              else if (absDist <= 4) opacityClass = "opacity-75"; 
+              else opacityClass = "opacity-40";
+              
+              scaleClass = "scale-100";
+              pointerEvents = "pointer-events-auto";
+            }
+            // PRIORITY 4: Normal playback mode
+            else {
+              if (distance === -1) {
+                // Just passed - fade out
+                opacityClass = "opacity-0"; 
+                scaleClass = "scale-95";
+                blurClass = "blur-sm";
+              } else if (distance > 0 && distance <= 3) {
+                if (distance === 1) {
+                  opacityClass = "opacity-80";
+                  blurClass = "blur-[0.5px]";
+                } else if (distance === 2) {
+                  opacityClass = "opacity-60";
+                  blurClass = "blur-[1px]";
+                } else if (distance === 3) {
+                  opacityClass = "opacity-40";
+                  blurClass = "blur-[1.5px]";
+                }
+                scaleClass = "scale-100";
+                pointerEvents = "pointer-events-auto";
+              }
+              // Else: opacity-0 (hidden)
             }
 
             return (

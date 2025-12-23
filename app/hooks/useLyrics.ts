@@ -24,6 +24,9 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
   
   // Track previous time to detect seeking backward
   const lastTimeRef = useRef(state.currentTime);
+  
+  // Track if we're in the process of seeking (to handle fast seeks)
+  const isSeekingRef = useRef(false);
 
   // Easing function for smooth premium feel (Ease Out Cubic)
   const easeOutCubic = (t: number): number => {
@@ -117,25 +120,61 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
      }, 4000);
   }, [resumeAutoScroll]);
 
+  // Listen to audio seeking events directly for reliable seek detection
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    
+    const handleSeeking = () => {
+      isSeekingRef.current = true;
+    };
+    
+    const handleSeeked = () => {
+      isSeekingRef.current = false;
+      const currentTime = audio.currentTime;
+      
+      // If seeked to near start, reset lyrics state
+      if (currentTime < 1.5) {
+        if (lyricsContainerRef.current) {
+          lyricsContainerRef.current.scrollTop = 0;
+        }
+        setActiveLyricIndex(-1);
+        setInitialScrollDone(false);
+        setAutoScrollEnabled(true); // Re-enable auto scroll
+        lastTimeRef.current = currentTime;
+      }
+    };
+    
+    audio.addEventListener('seeking', handleSeeking);
+    audio.addEventListener('seeked', handleSeeked);
+    
+    return () => {
+      audio.removeEventListener('seeking', handleSeeking);
+      audio.removeEventListener('seeked', handleSeeked);
+    };
+  }, [audioRef]);
+
   // CORE: Lyric tracking - updates activeLyricIndex based on currentTime
   useEffect(() => {
     if (!state.lyrics.isSynced || state.lyrics.synced.length === 0) return;
 
-    const prevTime = lastTimeRef.current;
     const currTime = state.currentTime;
     lastTimeRef.current = currTime;
     
-    // Detect seeking backward to near the beginning of the song
-    // If time dropped by more than 3 seconds AND new time is below 2 seconds
-    const seekedToStart = (prevTime - currTime > 3) && currTime < 2;
-    
-    if (seekedToStart) {
-      // Reset scroll position to top
-      if (lyricsContainerRef.current) {
-        lyricsContainerRef.current.scrollTop = 0;
+    // Force "start" state when at the very beginning (< 2s)
+    // This ensures lyrics always display correctly after seeking to start
+    // Use 2s threshold because time display shows rounded values
+    if (currTime < 2) {
+      if (activeLyricIndex !== -1) {
+        setActiveLyricIndex(-1);
+        setInitialScrollDone(false);
+        setAutoScrollEnabled(true);
+        // Reset scroll position to top
+        if (lyricsContainerRef.current) {
+          lyricsContainerRef.current.scrollTop = 0;
+        }
       }
-      // Reset to trigger instant scroll for the first lyric
-      setInitialScrollDone(false);
+      return;
     }
 
     // Add small offset (200ms ahead) so lyrics feel more in sync
