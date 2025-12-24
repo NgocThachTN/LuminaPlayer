@@ -9,7 +9,7 @@ Windows App:
 <img width="1919" height="1079" alt="image" src="https://github.com/user-attachments/assets/85a4c21c-a4b4-4ab2-84ea-a118780bbcdf" />
 
 
-<img width="1919" height="1079" alt="image" src="https://github.com/user-attachments/assets/01778150-f732-4c9c-99af-8c8d3a20e285" />
+<img width="1919" height="1079" alt="image" src="https://github.com/user-attachments/assets/8386cfc8-1eb5-4352-af4c-0573e09cfffa" />
 
 <img width="1919" height="1079" alt="image" src="https://github.com/user-attachments/assets/3b223244-4346-411d-8cf6-481b56bd7533" />
 
@@ -85,7 +85,7 @@ native/
 - Click **F11** button to open the fullscreen player with album art and lyrics display.
 - To exit fullscreen, click the **F11** button again to exit full screen mode 
 
-<img width="1919" height="1079" alt="image" src="https://github.com/user-attachments/assets/ad2bed6b-064e-45fa-b412-64b6eac3839b" />
+<img width="1919" height="1079" alt="image" src="https://github.com/user-attachments/assets/65bb77f8-de4f-4f1d-8022-33d54add7699" />
 
 
 ## Build Desktop App
