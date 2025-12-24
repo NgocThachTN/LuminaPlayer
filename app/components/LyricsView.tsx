@@ -163,27 +163,30 @@ export const LyricsView = memo(({
             let scaleClass = "scale-95";
             let pointerEvents = "pointer-events-none";
 
-            // PRIORITY 1: Start state - always show first 4 lyrics regardless of other conditions
+            // PRIORITY 1: Start state
             if (isAtStart && idx < 4) {
               if (idx === 0) {
-                opacityClass = "opacity-100";
+                opacityClass = "opacity-90"; // Reduced from 100
                 scaleClass = "scale-105";
+                blurClass = "blur-0";
               } else if (idx === 1) {
-                opacityClass = "opacity-90";
+                opacityClass = "opacity-70"; // Reduced from 80
                 scaleClass = "scale-100";
+                blurClass = "blur-[1px]";
               } else if (idx === 2) {
-                opacityClass = "opacity-80";
+                opacityClass = "opacity-40"; // Reduced from 50
                 scaleClass = "scale-100";
+                blurClass = "blur-[2px]";
               } else {
-                opacityClass = "opacity-60";
+                opacityClass = "opacity-20"; // Reduced from 30
                 scaleClass = "scale-100";
+                blurClass = "blur-[3px]";
               }
-              blurClass = "blur-0";
               pointerEvents = "pointer-events-auto";
             }
             // PRIORITY 2: Active lyric (when not at start)
             else if (isActive) {
-              opacityClass = "opacity-100";
+              opacityClass = "opacity-90"; // Reduced from 100 to avoid pure white glare
               scaleClass = "scale-110";
               pointerEvents = "pointer-events-auto";
               blurClass = "blur-0";
@@ -191,10 +194,22 @@ export const LyricsView = memo(({
             // PRIORITY 3: User browsing mode (auto-scroll disabled)
             else if (!autoScrollEnabled) {
               const absDist = Math.abs(distance);
-              if (absDist === 0) opacityClass = "opacity-100";  // Only active lyric is bright
-              else if (absDist <= 2) opacityClass = "opacity-60"; 
-              else if (absDist <= 5) opacityClass = "opacity-40";
-              else opacityClass = "opacity-25";
+              if (absDist === 0) {
+                opacityClass = "opacity-90";
+                blurClass = "blur-0";
+              }
+              else if (absDist <= 2) {
+                opacityClass = "opacity-50"; // Reduced
+                blurClass = "blur-[1px]"; 
+              }
+              else if (absDist <= 5) {
+                opacityClass = "opacity-20"; // Reduced
+                blurClass = "blur-[2px]";
+              }
+              else {
+                 opacityClass = "opacity-5"; // Very faint
+                 blurClass = "blur-[4px]";
+              }
               
               scaleClass = "scale-100";
               pointerEvents = "pointer-events-auto";
@@ -202,44 +217,47 @@ export const LyricsView = memo(({
             // PRIORITY 4: Normal playback mode
             else {
               if (distance === -1) {
-                // Just passed - fade out
+                // Just passed - fade out completely
                 opacityClass = "opacity-0"; 
                 scaleClass = "scale-95";
-                blurClass = ""; // Removed blur
-              } else if (distance > 0 && distance <= 3) {
-                if (distance === 1) {
-                  opacityClass = "opacity-80";
-                } else if (distance === 2) {
-                  opacityClass = "opacity-60";
-                } else if (distance === 3) {
-                  opacityClass = "opacity-40";
+                blurClass = "blur-xs";
+              } else if (distance > 0 && distance <= 4) {
+                const forwardDist = distance;
+                if (forwardDist === 1) {
+                  opacityClass = "opacity-60"; // Reduced from 70
+                  blurClass = "blur-[1px]";
+                } else if (forwardDist === 2) {
+                  opacityClass = "opacity-30"; // Reduced from 40
+                  blurClass = "blur-[2px]";
+                } else if (forwardDist === 3) {
+                  opacityClass = "opacity-15"; // Reduced from 20
+                   blurClass = "blur-[3px]";
+                } else {
+                  opacityClass = "opacity-5";
+                   blurClass = "blur-[4px]";
                 }
                 scaleClass = "scale-100";
                 pointerEvents = "pointer-events-auto";
-                blurClass = ""; // Keep text sharp
               }
               // Else: opacity-0 (hidden)
             }
 
             // Determine text color and styling based on state
             let textColor = lyricsColors.inactive;
-            let fontWeight = 500;
+            const fontWeight = 700; // Always bold as requested
             let textShadow = 'none';
             
             if (isAtStart && idx < 4) {
               textColor = idx === 0 ? lyricsColors.active : lyricsColors.upcoming;
-              fontWeight = idx === 0 ? 700 : 600;
-              if (idx === 0) textShadow = '0 2px 4px rgba(0,0,0,0.3)'; // Subtle drop shadow instead of glare
+              if (idx === 0) textShadow = '0 0 15px rgba(255,255,255,0.2)'; // Reduced glow
             } else if (isActive) {
               textColor = lyricsColors.active;
-              fontWeight = 700;
-              textShadow = '0 2px 4px rgba(0,0,0,0.3)'; // Subtle drop shadow for readability
+              // Much softer glow, less intense
+              textShadow = '0 0 20px rgba(255,255,255,0.4), 0 0 5px rgba(255,255,255,0.2)'; 
             } else if (!autoScrollEnabled) {
               textColor = Math.abs(distance) === 0 ? lyricsColors.active : lyricsColors.upcoming;
-              fontWeight = Math.abs(distance) === 0 ? 700 : 500;
             } else if (distance > 0 && distance <= 3) {
               textColor = distance === 1 ? lyricsColors.upcoming : lyricsColors.faded;
-              fontWeight = distance === 1 ? 600 : 500;
             }
 
             return (
@@ -249,7 +267,7 @@ export const LyricsView = memo(({
                   audioRef.current &&
                   (audioRef.current.currentTime = line.time)
                 }
-                className={`lyric-item my-5 md:my-7 text-2xl md:text-[2.5rem] leading-tight cursor-pointer select-none transition-all duration-500 ease-out transform-gpu tracking-tight ${
+                className={`lyric-item my-5 md:my-7 text-2xl md:text-[2.5rem] leading-tight cursor-pointer select-none transition-all duration-700 ease-out transform-gpu tracking-tight ${
                   isActive ? "active-lyric" : ""
                 } ${opacityClass} ${blurClass} ${scaleClass} ${pointerEvents}`}
                 style={{ 
