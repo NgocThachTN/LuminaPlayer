@@ -197,6 +197,8 @@ const App: React.FC = () => {
             setIsViewReady={uiHook.setIsViewReady}
             // Context Playback Prop
             onPlayContext={handlePlayFromContext}
+            // Playback Control
+            togglePlay={audioHook.togglePlay}
          />
       </main>
 

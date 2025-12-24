@@ -35,6 +35,8 @@ interface LibraryViewProps {
   setIsViewReady: (v: boolean) => void;
   // Context Playback
   onPlayContext: (item: PlaylistItem, index: number, contextParams: { type: 'playlist' | 'album' | 'artist', id?: string, items: PlaylistItem[] }) => void;
+  // Playback Control
+  togglePlay: () => void;
 }
 
 const LibraryViewBase: React.FC<LibraryViewProps> = ({
@@ -60,7 +62,8 @@ const LibraryViewBase: React.FC<LibraryViewProps> = ({
   setShowApiKeyModal,
   isRestoringLayout,
   setIsViewReady,
-  onPlayContext
+  onPlayContext,
+  togglePlay
 }) => {
   const playlistContainerRef = useRef<HTMLDivElement>(null);
   const albumsContainerRef = useRef<HTMLDivElement>(null);
@@ -331,21 +334,49 @@ const LibraryViewBase: React.FC<LibraryViewProps> = ({
                               willChange: 'transform', // GPU hint
                             }}
                           >
-                            {/* Number / Playing Indicator */}
-                            <div className="w-12 shrink-0 flex items-center">
+                            {/* Number / Playing Indicator - Clickable */}
+                            <div 
+                              className="w-12 shrink-0 flex items-center cursor-pointer"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (isCurrentSong) {
+                                  // Toggle play/pause for current song
+                                  togglePlay();
+                                } else {
+                                  // Play this song
+                                  handleSongSelect(idx);
+                                }
+                              }}
+                            >
                               {isCurrentSong && state.isPlaying ? (
-                                <div className="playing-indicator-v2">
-                                  <span></span>
-                                  <span></span>
-                                  <span></span>
-                                </div>
+                                <>
+                                  {/* Show equalizer by default, pause icon on hover */}
+                                  <div className="playing-indicator-v2 group-hover:hidden">
+                                    <span></span>
+                                    <span></span>
+                                    <span></span>
+                                  </div>
+                                  <svg className="w-4 h-4 text-[#f1c40f] hidden group-hover:block" fill="currentColor" viewBox="0 0 24 24">
+                                    <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+                                  </svg>
+                                </>
+                              ) : isCurrentSong && !state.isPlaying ? (
+                                <>
+                                  {/* Current song paused - show play icon */}
+                                  <svg className="w-4 h-4 text-[#f1c40f]" fill="currentColor" viewBox="0 0 24 24">
+                                    <path d="M8 5v14l11-7z"/>
+                                  </svg>
+                                </>
                               ) : (
-                                <span className="text-xs font-mono text-white/20 group-hover:hidden">
-                                  {String(idx + 1).padStart(2, "0")}
-                                </span>
-                              )}
-                              {!(isCurrentSong && state.isPlaying) && (
-                                <svg className="w-4 h-4 text-white/60 hidden group-hover:block" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                                <>
+                                  {/* Other songs - show number, play icon on hover */}
+                                  <span className="text-xs font-mono text-white/20 group-hover:hidden">
+                                    {String(idx + 1).padStart(2, "0")}
+                                  </span>
+                                  <svg className="w-4 h-4 text-white/60 hidden group-hover:block" fill="currentColor" viewBox="0 0 24 24">
+                                    <path d="M8 5v14l11-7z"/>
+                                  </svg>
+                                </>
                               )}
                             </div>
 
