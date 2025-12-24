@@ -1,0 +1,7 @@
+C:\Users\Hammo\Documents\Coding\LuminaPlayer\src-tauri\target\debug\deps\fxhash-b9ea84e7be8869d7.d: C:\Users\Hammo\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\fxhash-0.2.1\lib.rs
+
+C:\Users\Hammo\Documents\Coding\LuminaPlayer\src-tauri\target\debug\deps\libfxhash-b9ea84e7be8869d7.rlib: C:\Users\Hammo\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\fxhash-0.2.1\lib.rs
+
+C:\Users\Hammo\Documents\Coding\LuminaPlayer\src-tauri\target\debug\deps\libfxhash-b9ea84e7be8869d7.rmeta: C:\Users\Hammo\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\fxhash-0.2.1\lib.rs
+
+C:\Users\Hammo\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\fxhash-0.2.1\lib.rs:

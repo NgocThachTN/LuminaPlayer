@@ -3,9 +3,10 @@ import { useRef, useEffect } from "react";
 import { SongState, PlaylistItem, SongMetadata, LyricsResult } from "../types";
 import { getLyrics } from "../../services/geminiService";
 import { extractMetadata, resolveITunesCoverUrl } from "../../services/metadataService";
+import { getDesktopAPI } from "../../services/tauriService";
 
 const emptyLyrics: LyricsResult = { synced: [], plain: [], isSynced: false };
-const isElectron = !!(window as any).electronAPI;
+const isDesktop = () => !!(window as any).electronAPI || '__TAURI__' in window;
 
 // Constants
 const toTitleCase = (str: string) => {
@@ -71,14 +72,14 @@ export const useAudio = (
       fileSize = file.size;
       url = URL.createObjectURL(file);
     }
-    // If we only have path (Electron), use file:// protocol directly
-    else if (item.path && isElectron) {
+    // If we only have path (Desktop app), use file:// protocol directly
+    else if (item.path && isDesktop()) {
       url = `file://${item.path.replace(/\\/g, "/")}`;
 
       // Get basic metadata from filename
-      const electronAPI = (window as any).electronAPI;
-      if (electronAPI) {
-        const info = await electronAPI.getFileInfo(item.path);
+      const desktopAPI = getDesktopAPI();
+      if (desktopAPI) {
+        const info = await desktopAPI.getFileInfo(item.path);
         metadataTitle = info.title;
         metadataArtist = info.artist;
         fileSize = info.size || null;
@@ -132,9 +133,9 @@ export const useAudio = (
       currentSongIndex: index,
     }));
 
-     const electronAPI = (window as any).electronAPI;
-    if (isElectron && electronAPI) {
-      electronAPI.saveCurrentIndex(index);
+     const desktopAPI = getDesktopAPI();
+    if (isDesktop() && desktopAPI) {
+      desktopAPI.saveCurrentIndex(index);
     }
 
     setIsLoading(true);
@@ -149,8 +150,8 @@ export const useAudio = (
       };
 
       try {
-        if (item.path && isElectron && electronAPI) {
-          const metadata = await electronAPI.extractMetadata(item.path);
+        if (item.path && isDesktop() && desktopAPI) {
+          const metadata = await desktopAPI.extractMetadata(item.path);
           finalTitle = toTitleCase(metadata.title);
           finalArtist = toTitleCase(metadata.artist);
           finalMetadata = { ...metadata, title: finalTitle, artist: finalArtist };
@@ -302,12 +303,12 @@ export const useAudio = (
 
   // Update Discord Rich Presence
   useEffect(() => {
-    const electronAPI = (window as any).electronAPI;
-    if (!isElectron || !electronAPI?.updateDiscordPresence) return;
+    const desktopAPI = getDesktopAPI();
+    if (!isDesktop() || !desktopAPI?.updateDiscordPresence) return;
 
     const audio = audioRef.current;
     
-    electronAPI.updateDiscordPresence({
+    desktopAPI.updateDiscordPresence({
       title: state.metadata.title,
       artist: state.metadata.artist,
       isPlaying: state.isPlaying,
@@ -318,7 +319,7 @@ export const useAudio = (
     if (state.metadata.title && state.metadata.artist !== "Unknown Artist") {
        resolveITunesCoverUrl(state.metadata.title, state.metadata.artist).then(url => {
          if (url) {
-            electronAPI.updateDiscordPresence({
+            desktopAPI.updateDiscordPresence({
               title: state.metadata.title,
               artist: state.metadata.artist,
               isPlaying: state.isPlaying,
@@ -364,9 +365,9 @@ export const useAudio = (
   // Clear Discord presence on unmount
   useEffect(() => {
     return () => {
-      const electronAPI = (window as any).electronAPI;
-      if (isElectron && electronAPI?.clearDiscordPresence) {
-        electronAPI.clearDiscordPresence();
+      const desktopAPI = getDesktopAPI();
+      if (isDesktop() && desktopAPI?.clearDiscordPresence) {
+        desktopAPI.clearDiscordPresence();
       }
     };
   }, []);

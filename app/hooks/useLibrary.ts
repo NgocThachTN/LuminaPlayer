@@ -8,9 +8,10 @@ import {
   SongState
 } from "../types";
 import { extractMetadata } from "../../services/metadataService";
+import { getDesktopAPI } from "../../services/tauriService";
 
-// Helper to check if running in Electron
-const isElectron = !!(window as any).electronAPI;
+// Helper to check if running in Desktop environment (Electron or Tauri)
+const isDesktop = () => !!(window as any).electronAPI || '__TAURI__' in window;
 
 export const useLibrary = (
   state: SongState,
@@ -34,24 +35,24 @@ export const useLibrary = (
   // Load saved playlist on startup (Electron only)
   useEffect(() => {
     const loadSavedPlaylist = async () => {
-      const electronAPI = (window as any).electronAPI;
-      if (!isElectron || !electronAPI) {
+      const desktopAPI = getDesktopAPI();
+      if (!isDesktop() || !desktopAPI) {
         setHasCheckedSaved(true);
         return;
       }
 
       try {
-        const savedItems = await electronAPI.getPlaylist();
+        const savedItems = await desktopAPI.getPlaylist();
         
         if (savedItems && savedItems.length > 0) {
           const items: PlaylistItem[] = [];
           
           for (const item of savedItems) {
             // Normalize legacy string paths to objects
-            const path = typeof item === 'string' ? item : item.path;
+            const path = typeof item === 'string' ? item : (item as any).path;
             
             // Verify file still exists
-            const exists = await electronAPI.fileExists(path);
+            const exists = await desktopAPI.fileExists(path);
             if (exists) {
               if (typeof item === 'string') {
                 items.push({
@@ -60,7 +61,7 @@ export const useLibrary = (
                 });
               } else {
                  // Restore persisted metadata
-                 items.push(item);
+                 items.push(item as PlaylistItem);
               }
             }
           }
@@ -102,17 +103,17 @@ export const useLibrary = (
 
       try {
         let metadata: PlaylistItemMetadata;
-        const electronAPI = (window as any).electronAPI;
+        const desktopAPI = getDesktopAPI();
 
-        if (item.path && isElectron && electronAPI) {
-          const meta = await electronAPI.extractMetadata(item.path);
+        if (item.path && isDesktop() && desktopAPI) {
+          const meta = await desktopAPI.extractMetadata(item.path);
           metadata = {
             title: toTitleCase(meta.title),
             artist: toTitleCase(meta.artist),
             album: toTitleCase(meta.album || "Unknown Album"),
             cover: meta.cover,
             duration: meta.duration,
-            year: meta.year,
+            year: (meta as any).year,
           };
         } else if (item.file) {
           const meta = await extractMetadata(item.file);
@@ -167,11 +168,11 @@ export const useLibrary = (
     
     // START: Persistence Hook
     // Save the fully loaded metadata (including newly extracted ones) to persistent store
-    if (isElectron) {
-       const electronAPI = (window as any).electronAPI;
-       if (electronAPI) {
+    if (isDesktop()) {
+       const desktopAPI = getDesktopAPI();
+       if (desktopAPI) {
           console.log("Saving updated metadata to storage...");
-          electronAPI.savePlaylist(updatedItems);
+          desktopAPI.savePlaylist(updatedItems);
        }
     }
     // END: Persistence Hook
@@ -269,10 +270,10 @@ export const useLibrary = (
       currentSongIndex: 0,
     }));
 
-    // Save to Electron storage
-    const electronAPI = (window as any).electronAPI;
-    if (isElectron && electronAPI && filePath) {
-      await electronAPI.savePlaylist([filePath]);
+    // Save to Desktop storage
+    const desktopAPI = getDesktopAPI();
+    if (isDesktop() && desktopAPI && filePath) {
+      await desktopAPI.savePlaylist([filePath]);
     }
 
     // Load metadata in background
@@ -306,12 +307,12 @@ export const useLibrary = (
       currentSongIndex: -1,
     }));
 
-    // Save paths to Electron storage
-    const electronAPI = (window as any).electronAPI;
-    if (isElectron && electronAPI) {
+    // Save paths to Desktop storage
+    const desktopAPI = getDesktopAPI();
+    if (isDesktop() && desktopAPI) {
       const paths = items.map((item) => item.path).filter((p) => p);
       if (paths.length > 0) {
-        await electronAPI.savePlaylist(paths);
+        await desktopAPI.savePlaylist(paths);
       }
     }
 
@@ -320,12 +321,12 @@ export const useLibrary = (
     onImportComplete?.();
   };
 
-  // Electron: Open folder using native dialog
+  // Desktop: Open folder using native dialog
   const handleElectronFolderSelect = async () => {
-    const electronAPI = (window as any).electronAPI;
-    if (!electronAPI) return;
+    const desktopAPI = getDesktopAPI();
+    if (!desktopAPI) return;
 
-    const filePaths = await electronAPI.openFolderDialog();
+    const filePaths = await desktopAPI.openFolderDialog();
     if (filePaths.length === 0) return;
 
     const items: PlaylistItem[] = filePaths.map((p: string) => ({
@@ -340,18 +341,18 @@ export const useLibrary = (
       currentSongIndex: -1,
     }));
 
-    // Save to Electron storage
-    await electronAPI.savePlaylist(filePaths);
+    // Save to Desktop storage
+    await desktopAPI.savePlaylist(filePaths);
     // Load metadata in background
     loadAllMetadata(items);
   };
 
-  // Electron: Open file using native dialog
+  // Desktop: Open file using native dialog
   const handleElectronFileSelect = async () => {
-    const electronAPI = (window as any).electronAPI;
-    if (!electronAPI) return;
+    const desktopAPI = getDesktopAPI();
+    if (!desktopAPI) return;
 
-    const filePaths = await electronAPI.openFileDialog();
+    const filePaths = await desktopAPI.openFileDialog();
     if (filePaths.length === 0) return;
 
     const items: PlaylistItem[] = filePaths.map((p: string) => ({
@@ -366,8 +367,8 @@ export const useLibrary = (
       currentSongIndex: 0,
     }));
 
-    // Save to Electron storage
-    await electronAPI.savePlaylist(filePaths);
+    // Save to Desktop storage
+    await desktopAPI.savePlaylist(filePaths);
 
     // Load metadata in background
     loadAllMetadata(items);
