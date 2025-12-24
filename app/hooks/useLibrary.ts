@@ -268,6 +268,9 @@ export const useLibrary = (
       await electronAPI.savePlaylist([filePath]);
     }
 
+    // Load metadata in background
+    loadAllMetadata(items);
+
     await playSongFromItem(items[0], 0);
     onImportComplete?.();
   };
@@ -358,6 +361,9 @@ export const useLibrary = (
 
     // Save to Electron storage
     await electronAPI.savePlaylist(filePaths);
+
+    // Load metadata in background
+    loadAllMetadata(items);
 
     // Auto play first track
     await playSongFromItem(items[0], 0);
