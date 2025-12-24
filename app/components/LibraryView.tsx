@@ -306,7 +306,7 @@ const LibraryViewBase: React.FC<LibraryViewProps> = ({
                         if (!item) return null;
                         
                         const currentSong = state.playlist[state.currentSongIndex];
-                        const isPlaying = currentSong && (
+                        const isCurrentSong = currentSong && (
                           (item.path && item.path === currentSong.path) ||
                           (item.name === currentSong.name)
                         );
@@ -317,7 +317,7 @@ const LibraryViewBase: React.FC<LibraryViewProps> = ({
                             data-index={idx}
                             onClick={() => handleSongSelect(idx)}
                             className={`playlist-item virtual-list-item group flex items-center px-4 py-3 rounded-md cursor-pointer h-[56px] transition-colors ${
-                              isPlaying ? "active bg-white/5" : "hover:bg-white/5"
+                              isCurrentSong ? "active bg-white/5" : "hover:bg-white/5"
                             }`}
                             style={{
                               position: 'absolute',
@@ -333,7 +333,7 @@ const LibraryViewBase: React.FC<LibraryViewProps> = ({
                           >
                             {/* Number / Playing Indicator */}
                             <div className="w-12 shrink-0 flex items-center">
-                              {isPlaying ? (
+                              {isCurrentSong && state.isPlaying ? (
                                 <div className="playing-indicator-v2">
                                   <span></span>
                                   <span></span>
@@ -344,7 +344,7 @@ const LibraryViewBase: React.FC<LibraryViewProps> = ({
                                   {String(idx + 1).padStart(2, "0")}
                                 </span>
                               )}
-                              {!isPlaying && (
+                              {!(isCurrentSong && state.isPlaying) && (
                                 <svg className="w-4 h-4 text-white/60 hidden group-hover:block" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
                               )}
                             </div>
@@ -352,7 +352,7 @@ const LibraryViewBase: React.FC<LibraryViewProps> = ({
                             {/* Song Title & Artwork */}
                             <div className="flex-1 min-w-0 flex items-center gap-4">
                               <div className="min-w-0">
-                                <h4 className={`text-sm font-medium tracking-wide truncate ${isPlaying ? 'text-[#f1c40f]' : 'text-white/90'}`}>
+                                <h4 className={`text-sm font-medium tracking-wide truncate ${isCurrentSong ? 'text-[#f1c40f]' : 'text-white/90'}`}>
                                   {item.metadata?.title || item.name.replace(/\.[^/.]+$/, "")}
                                 </h4>
                               </div>

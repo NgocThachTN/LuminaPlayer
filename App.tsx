@@ -249,14 +249,16 @@ const App: React.FC = () => {
       />
       
       {/* Import Success Notification */}
-      <div className={`fixed bottom-24 left-1/2 -translate-x-1/2 z-[200] transition-all duration-500 transform ${uiHook.showImportSuccess ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0 pointer-events-none'}`}>
+      {uiHook.showImportSuccess && hasCheckedSaved && playlistItems.length > 0 && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[200] transition-all duration-500 transform translate-y-0 opacity-100">
           <div className="bg-white text-black px-6 py-3 rounded-full shadow-[0_0_30px_rgba(255,255,255,0.2)] flex items-center gap-3">
              <div className="w-5 h-5 bg-green-500 rounded-full flex items-center justify-center text-white">
                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
              </div>
              <span className="font-bold text-sm tracking-wide uppercase">Imported Successfully</span>
           </div>
-      </div>
+        </div>
+      )}
     </div>
   );
 };
