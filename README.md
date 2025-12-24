@@ -6,18 +6,22 @@ A minimalist music player with synchronized lyrics, high-res audio support, and 
 
 Windows App:
 
-<img width="1829" height="961" alt="image" src="https://github.com/user-attachments/assets/910bd4d3-eaea-4813-84ed-6cd14a04121c" />
+<img width="1919" height="1032" alt="image" src="https://github.com/user-attachments/assets/7e3bbd90-6a8e-4e0a-9601-bc19e0b58a86" />
 
 
-<img width="1919" height="1021" alt="image" src="https://github.com/user-attachments/assets/e6f61917-6524-42d4-99c3-8c153498b448" />
+
+<img width="1919" height="1079" alt="image" src="https://github.com/user-attachments/assets/01778150-f732-4c9c-99af-8c8d3a20e285" />
 
 
-<img width="1917" height="1019" alt="image" src="https://github.com/user-attachments/assets/acddcf15-3cda-4fd5-ac1c-a7d7c881be5e" />
+
+<img width="1919" height="1079" alt="image" src="https://github.com/user-attachments/assets/65bb77f8-de4f-4f1d-8022-33d54add7699" />
+
 
 
 Discord Rich Presence:
 
-<img width="616" height="282" alt="image" src="https://github.com/user-attachments/assets/b50bd7c7-2fe6-4fbe-a7ec-426656aac251" />
+<img width="484" height="192" alt="image" src="https://github.com/user-attachments/assets/2b7fde05-9ee0-4178-8909-65dfad286e45" />
+
 
 ## Features
 
