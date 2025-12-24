@@ -2,7 +2,7 @@ const { app, BrowserWindow, ipcMain, dialog, shell } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
-const DiscordRPC = require("discord-rpc");
+// Discord RPC is dynamically imported as ESM in initDiscordRPC()
 require("dotenv").config({ path: path.join(__dirname, "../.env") });
 
 // Discord Rich Presence Configuration
@@ -11,127 +11,87 @@ require("dotenv").config({ path: path.join(__dirname, "../.env") });
 const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID; // Loaded from .env
 let rpc = null;
 let rpcReady = false;
-let rpcRetryTimeout = null;
 let lastPresence = null; // Cache for reconnection
+let lastCoverUrl = null; // Cache for fetched cover art URL
 
-// Initialize Discord RPC with Auto-Reconnection and Heartbeat
+// Initialize Discord RPC with @xhayper/discord-rpc (ESM module)
 let rpcHeartbeatInterval = null;
-let isReconnecting = false; // Lock to prevent multiple simultaneous reconnections
 
-function initDiscordRPC() {
+async function initDiscordRPC() {
   try {
-    DiscordRPC.register(DISCORD_CLIENT_ID);
+    // Dynamic import for ESM module
+    const { Client } = await import("@xhayper/discord-rpc");
 
-    const connect = () => {
-      // Prevent multiple simultaneous reconnection attempts
-      if (isReconnecting) {
-        console.log("Discord RPC: Reconnection already in progress, skipping...");
-        return;
-      }
-      isReconnecting = true;
+    rpc = new Client({
+      clientId: DISCORD_CLIENT_ID,
+    });
 
-      // Clean up previous instance completely
-      if (rpc) {
-        try {
-          rpc.removeAllListeners();
-          rpc.destroy();
-        } catch (_) { }
-        rpc = null;
+    rpc.on("ready", () => {
+      console.log("Discord RPC Connected!");
+      rpcReady = true;
+
+      // Restore last known presence upon connection
+      if (lastPresence && lastPresence.isPlaying) {
+        updateDiscordPresence(lastPresence);
+      } else {
+        rpc.user?.setActivity({
+          details: "Idle",
+          state: "Not playing anything",
+          largeImageKey: "lumina_icon",
+          largeImageText: "Lumina Music Player",
+        });
       }
+    });
+
+    rpc.on("disconnected", () => {
+      console.log("Discord RPC Disconnected.");
       rpcReady = false;
+    });
 
-      rpc = new DiscordRPC.Client({ transport: "ipc" });
+    // Login to Discord
+    await rpc.login().catch((err) => {
+      console.log("Discord RPC Login failed:", err.message);
+      rpcReady = false;
+    });
 
-      rpc.on("ready", () => {
-        console.log("Discord RPC Connected!");
-        rpcReady = true;
-        isReconnecting = false; // Release lock on success
-
-        // Restore last known presence upon connection
-        if (lastPresence && lastPresence.isPlaying) {
-          updateDiscordPresence(lastPresence);
-        } else {
-          rpc.setActivity({
-            details: "Idle",
-            state: "Not playing anything",
-            largeImageKey: "lumina_icon",
-            largeImageText: "Lumina Music Player",
-            instance: false,
-          });
-        }
-      });
-
-      rpc.on("disconnected", () => {
-        console.log("Discord RPC Disconnected. Will reconnect via heartbeat...");
-        rpcReady = false;
-        isReconnecting = false; // Release lock so heartbeat can retry
-      });
-
-      rpc.on("error", (err) => {
-        console.log("Discord RPC Error:", err.message);
-        rpcReady = false;
-        isReconnecting = false; // Release lock so heartbeat can retry
-      });
-
-      rpc.login({ clientId: DISCORD_CLIENT_ID }).catch((err) => {
-        // Discord likely not running - heartbeat will retry
-        console.log("Discord RPC Login failed - Discord may not be running");
-        rpcReady = false;
-        isReconnecting = false; // Release lock so heartbeat can retry
-      });
-    };
-
-    // Initial connection attempt
-    connect();
-
-    // Heartbeat: Check connection every 5 seconds with ACTIVE PING + TIMEOUT
+    // Heartbeat: Reconnect every 10 seconds if not connected
     if (rpcHeartbeatInterval) clearInterval(rpcHeartbeatInterval);
     rpcHeartbeatInterval = setInterval(async () => {
-      // If not ready and not currently reconnecting, try to reconnect
-      if (!rpcReady && !isReconnecting) {
+      if (!rpcReady) {
         console.log("Discord RPC Heartbeat: Attempting reconnection...");
-        connect();
-      } else if (rpcReady) {
-        // ACTIVE PING: Use updateDiscordPresence to properly refresh with cover art
         try {
-          // Wrap with timeout - if it hangs for 3s, connection is dead
-          const timeoutPromise = new Promise((_, reject) =>
-            setTimeout(() => reject(new Error("Ping timeout")), 3000)
-          );
-
-          // Use the full updateDiscordPresence to preserve cover art
-          if (lastPresence) {
-            await Promise.race([
-              updateDiscordPresence(lastPresence),
-              timeoutPromise
-            ]);
-          } else {
-            // No presence yet, just do a simple ping
-            await Promise.race([
-              rpc.setActivity({
-                details: "Idle",
-                state: "Not playing anything",
-                largeImageKey: "lumina_icon",
-                largeImageText: "Lumina Music Player",
-                instance: false,
-              }),
-              timeoutPromise
-            ]);
+          // Destroy old instance and create new one
+          if (rpc) {
+            try { await rpc.destroy(); } catch (_) { }
           }
-          // If we get here, connection is alive
+
+          const { Client } = await import("@xhayper/discord-rpc");
+          rpc = new Client({
+            clientId: DISCORD_CLIENT_ID,
+          });
+
+          rpc.on("ready", () => {
+            console.log("Discord RPC Reconnected!");
+            rpcReady = true;
+            if (lastPresence) {
+              updateDiscordPresence(lastPresence);
+            }
+          });
+
+          rpc.on("disconnected", () => {
+            rpcReady = false;
+          });
+
+          await rpc.login();
         } catch (e) {
-          // setActivity failed or timed out = stale connection, force reconnect
-          console.log("Discord RPC Heartbeat: Stale/hung connection detected, forcing reconnect...");
-          rpcReady = false;
-          isReconnecting = false; // Reset lock before reconnect
-          connect();
+          console.log("Discord RPC Reconnect failed:", e.message);
         }
       }
-    }, 5000); // Check every 5 seconds
+      // When connected, do nothing - let the activity continue without reset
+    }, 10000); // Check every 10 seconds
 
   } catch (err) {
     console.error("Discord RPC initialization error:", err);
-    isReconnecting = false;
   }
 }
 
@@ -207,13 +167,17 @@ async function updateDiscordPresence(data) {
     let largeImageKey = "lumina_icon"; // Default asset
     if (title && artist !== "Unknown Artist") {
       // Note: Check existing data.cover first in case provided by renderer
-      if (data.cover) {
+      if (data.cover && data.cover.startsWith("http")) {
+        // Already a valid URL
         largeImageKey = data.cover;
       } else {
         const fetchedUrl = await fetchCoverArt(title, artist);
         if (fetchedUrl) largeImageKey = fetchedUrl;
       }
     }
+
+    // Cache the cover URL for heartbeat ping
+    lastCoverUrl = largeImageKey;
 
     // Activity Object
     const activity = {
@@ -240,7 +204,7 @@ async function updateDiscordPresence(data) {
       }
     }
 
-    rpc.setActivity(activity);
+    rpc.user?.setActivity(activity);
   } catch (err) {
     console.error("Error updating Discord presence:", err);
   }
@@ -249,9 +213,10 @@ async function updateDiscordPresence(data) {
 // Clear Discord Rich Presence
 function clearDiscordPresence() {
   lastPresence = null;
+  lastCoverUrl = null;
   if (rpc && rpcReady) {
     try {
-      rpc.clearActivity();
+      rpc.user?.clearActivity();
     } catch (err) {
       console.error("Error clearing Discord presence:", err);
     }
@@ -341,11 +306,9 @@ app.on("window-all-closed", () => {
 
   // Clean up Discord RPC
   if (rpcHeartbeatInterval) clearInterval(rpcHeartbeatInterval);
-  if (rpcRetryTimeout) clearTimeout(rpcRetryTimeout);
 
   if (rpc) {
     try {
-      rpc.removeAllListeners();
       rpc.destroy();
     } catch (_) { }
   }
