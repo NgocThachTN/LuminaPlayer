@@ -14,23 +14,38 @@ let rpcReady = false;
 let rpcRetryTimeout = null;
 let lastPresence = null; // Cache for reconnection
 
-// Initialize Discord RPC with Auto-Reconnection
+// Initialize Discord RPC with Auto-Reconnection and Heartbeat
+let rpcHeartbeatInterval = null;
+let isReconnecting = false; // Lock to prevent multiple simultaneous reconnections
+
 function initDiscordRPC() {
   try {
     DiscordRPC.register(DISCORD_CLIENT_ID);
 
     const connect = () => {
-      // Clean up previous instance
+      // Prevent multiple simultaneous reconnection attempts
+      if (isReconnecting) {
+        console.log("Discord RPC: Reconnection already in progress, skipping...");
+        return;
+      }
+      isReconnecting = true;
+
+      // Clean up previous instance completely
       if (rpc) {
-        try { rpc.destroy(); } catch (_) { }
+        try {
+          rpc.removeAllListeners();
+          rpc.destroy();
+        } catch (_) { }
         rpc = null;
       }
+      rpcReady = false;
 
       rpc = new DiscordRPC.Client({ transport: "ipc" });
 
       rpc.on("ready", () => {
         console.log("Discord RPC Connected!");
         rpcReady = true;
+        isReconnecting = false; // Release lock on success
 
         // Restore last known presence upon connection
         if (lastPresence && lastPresence.isPlaying) {
@@ -47,25 +62,76 @@ function initDiscordRPC() {
       });
 
       rpc.on("disconnected", () => {
-        console.log("Discord RPC Disconnected. Retrying in 5s...");
+        console.log("Discord RPC Disconnected. Will reconnect via heartbeat...");
         rpcReady = false;
+        isReconnecting = false; // Release lock so heartbeat can retry
+      });
 
-        if (rpcRetryTimeout) clearTimeout(rpcRetryTimeout);
-        rpcRetryTimeout = setTimeout(connect, 5000);
+      rpc.on("error", (err) => {
+        console.log("Discord RPC Error:", err.message);
+        rpcReady = false;
+        isReconnecting = false; // Release lock so heartbeat can retry
       });
 
       rpc.login({ clientId: DISCORD_CLIENT_ID }).catch((err) => {
-        // Discord likely not running
+        // Discord likely not running - heartbeat will retry
+        console.log("Discord RPC Login failed - Discord may not be running");
         rpcReady = false;
-
-        if (rpcRetryTimeout) clearTimeout(rpcRetryTimeout);
-        rpcRetryTimeout = setTimeout(connect, 5000);
+        isReconnecting = false; // Release lock so heartbeat can retry
       });
     };
 
+    // Initial connection attempt
     connect();
+
+    // Heartbeat: Check connection every 5 seconds with ACTIVE PING + TIMEOUT
+    if (rpcHeartbeatInterval) clearInterval(rpcHeartbeatInterval);
+    rpcHeartbeatInterval = setInterval(async () => {
+      // If not ready and not currently reconnecting, try to reconnect
+      if (!rpcReady && !isReconnecting) {
+        console.log("Discord RPC Heartbeat: Attempting reconnection...");
+        connect();
+      } else if (rpcReady) {
+        // ACTIVE PING: Use updateDiscordPresence to properly refresh with cover art
+        try {
+          // Wrap with timeout - if it hangs for 3s, connection is dead
+          const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("Ping timeout")), 3000)
+          );
+
+          // Use the full updateDiscordPresence to preserve cover art
+          if (lastPresence) {
+            await Promise.race([
+              updateDiscordPresence(lastPresence),
+              timeoutPromise
+            ]);
+          } else {
+            // No presence yet, just do a simple ping
+            await Promise.race([
+              rpc.setActivity({
+                details: "Idle",
+                state: "Not playing anything",
+                largeImageKey: "lumina_icon",
+                largeImageText: "Lumina Music Player",
+                instance: false,
+              }),
+              timeoutPromise
+            ]);
+          }
+          // If we get here, connection is alive
+        } catch (e) {
+          // setActivity failed or timed out = stale connection, force reconnect
+          console.log("Discord RPC Heartbeat: Stale/hung connection detected, forcing reconnect...");
+          rpcReady = false;
+          isReconnecting = false; // Reset lock before reconnect
+          connect();
+        }
+      }
+    }, 5000); // Check every 5 seconds
+
   } catch (err) {
     console.error("Discord RPC initialization error:", err);
+    isReconnecting = false;
   }
 }
 
@@ -273,10 +339,15 @@ app.whenReady().then(() => {
 app.on("window-all-closed", () => {
   clearDiscordPresence();
 
+  // Clean up Discord RPC
+  if (rpcHeartbeatInterval) clearInterval(rpcHeartbeatInterval);
   if (rpcRetryTimeout) clearTimeout(rpcRetryTimeout);
 
   if (rpc) {
-    rpc.destroy();
+    try {
+      rpc.removeAllListeners();
+      rpc.destroy();
+    } catch (_) { }
   }
   if (process.platform !== "darwin") {
     app.quit();
