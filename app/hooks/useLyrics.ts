@@ -164,7 +164,9 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
     // Force "start" state when at the very beginning (< 2s)
     // This ensures lyrics always display correctly after seeking to start
     // Use 2s threshold because time display shows rounded values
-    if (currTime < 2) {
+    // Force "start" state when at the very beginning
+    // Only reset if we are essentially at 0. This allows lyrics at 0:01 to show.
+    if (currTime < 0.2) {
       if (activeLyricIndex !== -1) {
         setActiveLyricIndex(-1);
         setInitialScrollDone(false);

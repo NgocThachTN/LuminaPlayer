@@ -213,15 +213,14 @@ export const useAudio = (
     // Handle Repeat One (Single Song Loop)
     if (state.repeatMode === 'one') {
        if (audioRef.current) {
-          audioRef.current.pause();
+          // Simply rewind and ensure playing. No complex state toggling needed.
           audioRef.current.currentTime = 0;
-          setState(prev => ({ ...prev, currentTime: 0, isPlaying: true }));
-          setTimeout(() => {
-            audioRef.current?.play().catch(e => {
-                console.error("Replay failed:", e);
-                setState(prev => ({ ...prev, isPlaying: false }));
-            });
-          }, 50);
+          if (!state.isPlaying) {
+             audioRef.current.play().catch(e => console.error("Replay failed:", e));
+             setState(prev => ({ ...prev, isPlaying: true }));
+          } else {
+             audioRef.current.play().catch(console.error);
+          }
        }
        return;
     }
@@ -254,15 +253,13 @@ export const useAudio = (
     // just replay it directly to avoid state update redundancy/rendering issues.
     if (nextIndex === state.currentSongIndex) {
        if (audioRef.current) {
-          audioRef.current.pause();
           audioRef.current.currentTime = 0;
-          setState(prev => ({ ...prev, currentTime: 0, isPlaying: true }));
-          setTimeout(() => {
-            audioRef.current?.play().catch(e => {
-                console.error("Loop replay failed:", e);
-                setState(prev => ({ ...prev, isPlaying: false }));
-            });
-          }, 50);
+          if (!state.isPlaying) {
+             audioRef.current.play().catch(e => console.error("Loop replay failed:", e));
+             setState(prev => ({ ...prev, isPlaying: true }));
+          } else {
+             audioRef.current.play().catch(console.error);
+          }
        }
        return;
     }

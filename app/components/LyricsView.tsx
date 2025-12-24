@@ -112,24 +112,8 @@ export const LyricsView = memo(({
   }
 
   if (lyrics.isSynced) {
-    // Calculate lyric index directly from currentTime for reliability
-    // This makes the component self-sufficient during fast seeking
-    const calculateIndexFromTime = () => {
-      if (currentTime < 2) return -1; // Start state for first 2 seconds
-      
-      // Find the last lyric that should be active at currentTime
-      const adjustedTime = currentTime + 0.2; // 200ms ahead for sync feel
-      for (let i = lyrics.synced.length - 1; i >= 0; i--) {
-        if (lyrics.synced[i].time <= adjustedTime) {
-          return i;
-        }
-      }
-      return -1;
-    };
-    
-    // Use calculated index as primary
-    const calculatedIndex = calculateIndexFromTime();
-    const effectiveIndex = calculatedIndex;
+    // Use prop index directly to ensure sync with scroll hook
+    const effectiveIndex = activeLyricIndex;
     const isAtStart = effectiveIndex === -1;
 
     // Only auto-scroll to top when at start state AND auto-scroll is enabled
@@ -267,7 +251,7 @@ export const LyricsView = memo(({
                   audioRef.current &&
                   (audioRef.current.currentTime = line.time)
                 }
-                className={`lyric-item my-5 md:my-7 text-2xl md:text-[2.5rem] leading-tight cursor-pointer select-none transition-all duration-700 ease-out transform-gpu tracking-tight ${
+                className={`lyric-item first:mt-0 my-5 md:my-7 text-2xl md:text-[2.5rem] leading-tight cursor-pointer select-none transition-all duration-700 ease-out transform-gpu tracking-tight ${
                   isActive ? "active-lyric" : ""
                 } ${opacityClass} ${blurClass} ${scaleClass} ${pointerEvents}`}
                 style={{ 
