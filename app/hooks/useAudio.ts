@@ -243,7 +243,10 @@ export const useAudio = (
        if (state.repeatMode === 'all') {
          nextIndex = 0;
        } else {
-         // Stop playback
+         // Stop playback - both state AND actual audio
+         if (audioRef.current) {
+           audioRef.current.pause();
+         }
          setState((prev) => ({ ...prev, isPlaying: false }));
          return;
        }
