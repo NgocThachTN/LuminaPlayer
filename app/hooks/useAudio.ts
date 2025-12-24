@@ -332,6 +332,7 @@ export const useAudio = (
     state.metadata.artist,
     state.isPlaying,
     state.currentSongIndex,
+    state.duration, // Trigger update when new song's duration is loaded
   ]);
 
   // Media Session API
