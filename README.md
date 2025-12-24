@@ -75,6 +75,13 @@ native/
    # To launch Electron window:
    npm run electron:dev
    ```
+4. How to Use Fullscreen Player
+
+- Click **F11** button to open the fullscreen player with album art and lyrics display.
+- To exit fullscreen, click the **F11** button again to exit full screen mode 
+
+<img width="1919" height="1079" alt="image" src="https://github.com/user-attachments/assets/ad2bed6b-064e-45fa-b412-64b6eac3839b" />
+
 
 ## Build Desktop App
 
