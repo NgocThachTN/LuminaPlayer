@@ -699,6 +699,7 @@ ipcMain.handle("extract-metadata", async (event, filePath) => {
       album,
       cover: coverPath, // Now returning file:// URL or undefined
       duration: format.duration,
+      year: common.year,
     };
 
   } catch (error) {

@@ -111,7 +111,8 @@ export const useLibrary = (
             artist: toTitleCase(meta.artist),
             album: toTitleCase(meta.album || "Unknown Album"),
             cover: meta.cover,
-            duration: meta.duration, // Assuming we update Electron later
+            duration: meta.duration,
+            year: meta.year,
           };
         } else if (item.file) {
           const meta = await extractMetadata(item.file);
@@ -137,6 +138,7 @@ export const useLibrary = (
             album: toTitleCase(meta.album || "Unknown Album"),
             cover: meta.cover,
             duration: duration,
+            year: meta.year,
           };
         } else {
           metadata = {
@@ -187,12 +189,17 @@ export const useLibrary = (
 
       if (albumMap.has(key)) {
         albumMap.get(key)!.trackIndices.push(idx);
+        // Update year if not set and current track has year
+        if (!albumMap.get(key)!.year && item.metadata.year) {
+          albumMap.get(key)!.year = item.metadata.year;
+        }
       } else {
         albumMap.set(key, {
           name: albumName,
           artist: artistName,
           cover: item.metadata.cover,
           trackIndices: [idx],
+          year: item.metadata.year,
         });
       }
     });

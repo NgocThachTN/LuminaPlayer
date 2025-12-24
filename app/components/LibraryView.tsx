@@ -1,5 +1,5 @@
 
-import React, { useRef, useEffect, memo, useCallback } from 'react';
+import React, { useRef, useEffect, memo, useCallback, useState, useMemo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ViewMode, PlaylistItem, AlbumInfo, ArtistInfo, SongState } from '../types';
 import { LazyImage } from '../../components/LazyImage';
@@ -65,6 +65,11 @@ const LibraryViewBase: React.FC<LibraryViewProps> = ({
   onPlayContext,
   togglePlay
 }) => {
+  // Search & Sort state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortMode, setSortMode] = useState<'default' | 'alpha' | 'alpha-desc' | 'year' | 'year-desc'>('default');
+  const [showSortMenu, setShowSortMenu] = useState(false);
+
   const playlistContainerRef = useRef<HTMLDivElement>(null);
   const albumsContainerRef = useRef<HTMLDivElement>(null);
   const artistsContainerRef = useRef<HTMLDivElement>(null);
@@ -134,12 +139,151 @@ const LibraryViewBase: React.FC<LibraryViewProps> = ({
   const artistsScrollRef = useRef<HTMLDivElement>(null);
 
   // Playlist items for virtualization
-  const playlistData = React.useMemo(() => 
+  const playlistDataRaw = React.useMemo(() => 
     playlistItems.length > 0
       ? playlistItems
       : state.playlist.map((f) => ({ file: f, name: f.name })),
     [playlistItems, state.playlist]
   );
+
+  // Filtered & Sorted playlist data
+  const playlistData = useMemo(() => {
+    let data = [...playlistDataRaw];
+    
+    // Filter by search query
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      data = data.filter(item => 
+        (item.metadata?.title || item.name).toLowerCase().includes(query) ||
+        (item.metadata?.artist || '').toLowerCase().includes(query) ||
+        (item.metadata?.album || '').toLowerCase().includes(query)
+      );
+    }
+    
+    // Sort
+    if (sortMode === 'alpha') {
+      data.sort((a, b) => 
+        (a.metadata?.title || a.name).localeCompare(b.metadata?.title || b.name)
+      );
+    } else if (sortMode === 'alpha-desc') {
+      data.sort((a, b) => 
+        (b.metadata?.title || b.name).localeCompare(a.metadata?.title || a.name)
+      );
+    } else if (sortMode === 'year') {
+      data.sort((a, b) => {
+        const yearA = a.metadata?.year || 9999;
+        const yearB = b.metadata?.year || 9999;
+        return yearA - yearB;
+      });
+    } else if (sortMode === 'year-desc') {
+      data.sort((a, b) => {
+        const yearA = a.metadata?.year || 0;
+        const yearB = b.metadata?.year || 0;
+        return yearB - yearA;
+      });
+    }
+    
+    return data;
+  }, [playlistDataRaw, searchQuery, sortMode]);
+
+  // Filtered & Sorted albums
+  const filteredAlbums = useMemo(() => {
+    let data = [...albums];
+    
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      data = data.filter(album => 
+        album.name.toLowerCase().includes(query) ||
+        album.artist.toLowerCase().includes(query)
+      );
+    }
+    
+    if (sortMode === 'alpha') {
+      data.sort((a, b) => a.name.localeCompare(b.name));
+    } else if (sortMode === 'alpha-desc') {
+      data.sort((a, b) => b.name.localeCompare(a.name));
+    } else if (sortMode === 'year') {
+      data.sort((a, b) => (a.year || 9999) - (b.year || 9999));
+    } else if (sortMode === 'year-desc') {
+      data.sort((a, b) => (b.year || 0) - (a.year || 0));
+    }
+    
+    return data;
+  }, [albums, searchQuery, sortMode]);
+
+  // Grouped albums for section headers
+  const groupedAlbums = useMemo(() => {
+    if (sortMode === 'default') return null;
+    
+    const groups: { header: string; albums: typeof filteredAlbums }[] = [];
+    let currentHeader = '';
+    
+    // For year sort, filter albums that have a year
+    const isYearSort = sortMode === 'year' || sortMode === 'year-desc';
+    const albumsToGroup = isYearSort
+      ? [...filteredAlbums.filter(a => a.year), ...filteredAlbums.filter(a => !a.year)]
+      : filteredAlbums;
+    
+    albumsToGroup.forEach(album => {
+      let header: string;
+      if (isYearSort) {
+        if (!album.year) return; // Skip albums without year in grouped view
+        header = String(album.year);
+      } else {
+        header = (album.name[0] || '#').toUpperCase();
+      }
+      
+      if (header !== currentHeader) {
+        currentHeader = header;
+        groups.push({ header, albums: [album] });
+      } else {
+        groups[groups.length - 1].albums.push(album);
+      }
+    });
+    
+    return groups;
+  }, [filteredAlbums, sortMode]);
+
+  // Filtered & Sorted artists
+  const filteredArtists = useMemo(() => {
+    let data = [...artists];
+    
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      data = data.filter(artist => 
+        artist.name.toLowerCase().includes(query)
+      );
+    }
+    
+    if (sortMode === 'alpha') {
+      data.sort((a, b) => a.name.localeCompare(b.name));
+    } else if (sortMode === 'alpha-desc') {
+      data.sort((a, b) => b.name.localeCompare(a.name));
+    }
+    
+    return data;
+  }, [artists, searchQuery, sortMode]);
+
+  // Grouped artists for section headers
+  const groupedArtists = useMemo(() => {
+    if (sortMode !== 'alpha' && sortMode !== 'alpha-desc') return null;
+    
+    const groups: { header: string; artists: typeof filteredArtists }[] = [];
+    let currentHeader = '';
+    
+    filteredArtists.forEach(artist => {
+      const header = (artist.name[0] || '#').toUpperCase();
+      
+      if (header !== currentHeader) {
+        currentHeader = header;
+        groups.push({ header, artists: [artist] });
+      } else {
+        groups[groups.length - 1].artists.push(artist);
+      }
+    });
+    
+    return groups;
+  }, [filteredArtists, sortMode]);
 
   // Playlist virtualizer
   const playlistVirtualizer = useVirtualizer({
@@ -278,6 +422,107 @@ const LibraryViewBase: React.FC<LibraryViewProps> = ({
                   </button>
                </div>
             </div>
+
+            {/* Search & Sort Toolbar - only for playlist (fixed header) */}
+            {viewMode === 'playlist' && (
+              <div className="w-full px-8 md:px-16 py-1 flex items-center justify-end gap-3 shrink-0">
+                {/* Search Input */}
+                <div className="relative w-64">
+                  <input
+                    type="text"
+                    placeholder={viewMode === 'playlist' ? 'Search songs...' : viewMode === 'albums' ? 'Search albums...' : 'Search artists...'}
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 pl-10 text-sm text-white placeholder-white/30 focus:outline-none focus:border-white/30 transition-colors"
+                  />
+                  <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  {searchQuery && (
+                    <button 
+                      onClick={() => setSearchQuery('')}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white transition-colors"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+                
+                {/* Sort Icon Button with Dropdown */}
+                <div className="relative">
+                  <button 
+                    onClick={() => setShowSortMenu(!showSortMenu)}
+                    className={`p-2 rounded-lg transition-colors ${sortMode !== 'default' ? 'bg-white/20 text-white' : 'bg-white/5 text-white/50 hover:text-white hover:bg-white/10'}`}
+                    title="Sort options"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" />
+                    </svg>
+                  </button>
+                  
+                  {/* Sort Dropdown Menu */}
+                  {showSortMenu && (
+                    <>
+                      {/* Backdrop */}
+                      <div 
+                        className="fixed inset-0 z-40" 
+                        onClick={() => setShowSortMenu(false)}
+                      />
+                      {/* Menu */}
+                      <div className="absolute right-0 top-full mt-2 w-40 bg-neutral-900 border border-white/10 rounded-lg shadow-xl z-50 overflow-hidden">
+                        <button
+                          onClick={() => { setSortMode('default'); setShowSortMenu(false); }}
+                          className={`w-full px-4 py-2.5 text-left text-sm flex items-center gap-2 transition-colors ${sortMode === 'default' ? 'bg-white/10 text-white' : 'text-white/70 hover:bg-white/5 hover:text-white'}`}
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                          </svg>
+                          Default
+                        </button>
+                        <button
+                          onClick={() => { setSortMode('alpha'); setShowSortMenu(false); }}
+                          className={`w-full px-4 py-2.5 text-left text-sm flex items-center gap-2 transition-colors ${sortMode === 'alpha' ? 'bg-white/10 text-white' : 'text-white/70 hover:bg-white/5 hover:text-white'}`}
+                        >
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M12.93 2h-1.86L5.5 17h2.24l1.27-3.5h5.99l1.27 3.5h2.24L12.93 2zm-3.14 9.5L12 5.09l2.21 6.41H9.79zM19 21l-3-2.5v2H5v3h11v2l3-2.5z" />
+                          </svg>
+                          A-Z
+                        </button>
+                        <button
+                          onClick={() => { setSortMode('year'); setShowSortMenu(false); }}
+                          className={`w-full px-4 py-2.5 text-left text-sm flex items-center gap-2 transition-colors ${sortMode === 'year' ? 'bg-white/10 text-white' : 'text-white/70 hover:bg-white/5 hover:text-white'}`}
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                          Year (Oldest)
+                        </button>
+                        <button
+                          onClick={() => { setSortMode('year-desc'); setShowSortMenu(false); }}
+                          className={`w-full px-4 py-2.5 text-left text-sm flex items-center gap-2 transition-colors ${sortMode === 'year-desc' ? 'bg-white/10 text-white' : 'text-white/70 hover:bg-white/5 hover:text-white'}`}
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                          Year (Newest)
+                        </button>
+                        <button
+                          onClick={() => { setSortMode('alpha-desc'); setShowSortMenu(false); }}
+                          className={`w-full px-4 py-2.5 text-left text-sm flex items-center gap-2 transition-colors ${sortMode === 'alpha-desc' ? 'bg-white/10 text-white' : 'text-white/70 hover:bg-white/5 hover:text-white'}`}
+                        >
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M12.93 2h-1.86L5.5 17h2.24l1.27-3.5h5.99l1.27 3.5h2.24L12.93 2zm-3.14 9.5L12 5.09l2.21 6.41H9.79zM19 21l-3-2.5v2H5v3h11v2l3-2.5z" />
+                          </svg>
+                          Z-A
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
           {viewMode === "playlist" ? (
             <div className={`flex flex-col flex-1 min-h-0 transition-opacity duration-300 ${isRestoringLayout ? "opacity-0" : "opacity-100"}`}>
               {/* Table Header - Fixed outside scroll container */}
@@ -431,6 +676,48 @@ const LibraryViewBase: React.FC<LibraryViewProps> = ({
             <div className={`flex flex-col flex-1 min-h-0 content-visibility-auto transition-opacity duration-300 ${isRestoringLayout ? "opacity-0" : "opacity-100"}`}>
               {!isRestoringLayout && (
               <div className="flex-1 w-full overflow-y-auto lyrics-scroll p-8 md:px-16">
+                {/* Inline Search & Sort for Albums */}
+                <div className="flex items-center justify-end gap-3 mb-4">
+                  <div className="relative w-64">
+                    <input
+                      type="text"
+                      placeholder="Search albums..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 pl-10 text-sm text-white placeholder-white/30 focus:outline-none focus:border-white/30 transition-colors"
+                    />
+                    <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    {searchQuery && (
+                      <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white transition-colors">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <button onClick={() => setShowSortMenu(!showSortMenu)} className={`p-2 rounded-lg transition-colors ${sortMode !== 'default' ? 'bg-white/20 text-white' : 'bg-white/5 text-white/50 hover:text-white hover:bg-white/10'}`} title="Sort options">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" />
+                      </svg>
+                    </button>
+                    {showSortMenu && (
+                      <>
+                        <div className="fixed inset-0 z-40" onClick={() => setShowSortMenu(false)} />
+                        <div className="absolute right-0 top-full mt-2 w-40 bg-neutral-900 border border-white/10 rounded-lg shadow-xl z-50 overflow-hidden">
+                          <button onClick={() => { setSortMode('default'); setShowSortMenu(false); }} className={`w-full px-4 py-2.5 text-left text-sm flex items-center gap-2 transition-colors ${sortMode === 'default' ? 'bg-white/10 text-white' : 'text-white/70 hover:bg-white/5 hover:text-white'}`}>Default</button>
+                          <button onClick={() => { setSortMode('alpha'); setShowSortMenu(false); }} className={`w-full px-4 py-2.5 text-left text-sm flex items-center gap-2 transition-colors ${sortMode === 'alpha' ? 'bg-white/10 text-white' : 'text-white/70 hover:bg-white/5 hover:text-white'}`}>A-Z</button>
+                          <button onClick={() => { setSortMode('year'); setShowSortMenu(false); }} className={`w-full px-4 py-2.5 text-left text-sm flex items-center gap-2 transition-colors ${sortMode === 'year' ? 'bg-white/10 text-white' : 'text-white/70 hover:bg-white/5 hover:text-white'}`}>Year (Oldest)</button>
+                          <button onClick={() => { setSortMode('year-desc'); setShowSortMenu(false); }} className={`w-full px-4 py-2.5 text-left text-sm flex items-center gap-2 transition-colors ${sortMode === 'year-desc' ? 'bg-white/10 text-white' : 'text-white/70 hover:bg-white/5 hover:text-white'}`}>Year (Newest)</button>
+                          <button onClick={() => { setSortMode('alpha-desc'); setShowSortMenu(false); }} className={`w-full px-4 py-2.5 text-left text-sm flex items-center gap-2 transition-colors ${sortMode === 'alpha-desc' ? 'bg-white/10 text-white' : 'text-white/70 hover:bg-white/5 hover:text-white'}`}>Z-A</button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+
                 {!metadataLoaded && playlistItems.length > 0 ? (
                   <div className="flex flex-col items-center justify-center py-16 gap-4">
                     <div className="loading-spinner"></div>
@@ -438,72 +725,120 @@ const LibraryViewBase: React.FC<LibraryViewProps> = ({
                       Loading metadata...
                     </p>
                   </div>
-                ) : albums.length > 0 ? (
-                  <div ref={albumsContainerRef} className="album-grid">
-                    {albums.map((album) => {
-                      const albumKey = `${album.name}__${album.artist}`;
-                      const isCurrentAlbum = albumKey === currentSongAlbumKey;
-                      return (
-                        <div
-                          key={albumKey}
-                          onClick={() => {
-                            setSelectedAlbum(albumKey);
-                            setViewMode("album-detail");
-                          }}
-                          className={`album-card cursor-pointer group ${
-                            isCurrentAlbum ? "album-playing" : ""
-                          }`}
-                        >
-                          <div className="album-card-cover">
-                            {album.cover ? (
-                              <LazyImage
-                                src={album.cover}
-                                alt={album.name}
-                                className="w-full h-full object-cover"
-                                placeholderClassName="w-full h-full"
-                              />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-neutral-800 to-neutral-900">
-                                <svg
-                                  className="w-12 h-12 text-white/20"
-                                  fill="currentColor"
-                                  viewBox="0 0 24 24"
+                ) : filteredAlbums.length > 0 ? (
+                  <div ref={albumsContainerRef} className="space-y-8">
+                    {groupedAlbums ? (
+                      // Grouped view with section headers
+                      groupedAlbums.map(group => (
+                        <div key={group.header}>
+                          <h2 className="text-xl font-bold text-white/80 mb-4 pt-4 border-b border-white/10 pb-2">
+                            {group.header}
+                          </h2>
+                          <div className="album-grid">
+                            {group.albums.map((album) => {
+                              const albumKey = `${album.name}__${album.artist}`;
+                              const isCurrentAlbum = albumKey === currentSongAlbumKey;
+                              return (
+                                <div
+                                  key={albumKey}
+                                  onClick={() => {
+                                    setSelectedAlbum(albumKey);
+                                    setViewMode("album-detail");
+                                  }}
+                                  className={`album-card cursor-pointer group ${
+                                    isCurrentAlbum ? "album-playing" : ""
+                                  }`}
                                 >
-                                  <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
-                                </svg>
-                              </div>
-                            )}
-                            <div className="album-card-overlay">
-                              <svg
-                                className="w-12 h-12 text-white"
-                                fill="currentColor"
-                                viewBox="0 0 24 24"
-                              >
-                                <path d="M8 5v14l11-7z" />
-                              </svg>
-                            </div>
+                                  <div className="album-card-cover">
+                                    {album.cover ? (
+                                      <LazyImage
+                                        src={album.cover}
+                                        alt={album.name}
+                                        className="w-full h-full object-cover"
+                                        placeholderClassName="w-full h-full"
+                                      />
+                                    ) : (
+                                      <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-neutral-800 to-neutral-900">
+                                        <svg className="w-12 h-12 text-white/20" fill="currentColor" viewBox="0 0 24 24">
+                                          <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
+                                        </svg>
+                                      </div>
+                                    )}
+                                    <div className="album-card-overlay">
+                                      <svg className="w-12 h-12 text-white" fill="currentColor" viewBox="0 0 24 24">
+                                        <path d="M8 5v14l11-7z" />
+                                      </svg>
+                                    </div>
+                                  </div>
+                                  <div className="mt-3 px-1">
+                                    <p className="text-sm font-medium truncate text-white/90">{album.name}</p>
+                                    <p className="text-xs text-white/40 truncate mt-0.5">{album.artist}</p>
+                                    <p className="text-xs text-white/30 mt-1">{album.trackIndices.length} tracks</p>
+                                  </div>
+                                  {isCurrentAlbum && (
+                                    <div className="absolute top-2 right-2 playing-indicator">
+                                      <span></span><span></span><span></span>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
-                          <div className="mt-3 px-1">
-                            <p className="text-sm font-medium truncate text-white/90">
-                              {album.name}
-                            </p>
-                            <p className="text-xs text-white/40 truncate mt-0.5">
-                              {album.artist}
-                            </p>
-                            <p className="text-xs text-white/30 mt-1">
-                              {album.trackIndices.length} tracks
-                            </p>
-                          </div>
-                          {isCurrentAlbum && (
-                            <div className="absolute top-2 right-2 playing-indicator">
-                              <span></span>
-                              <span></span>
-                              <span></span>
-                            </div>
-                          )}
                         </div>
-                      );
-                    })}
+                      ))
+                    ) : (
+                      // Default flat grid view
+                      <div className="album-grid">
+                        {filteredAlbums.map((album) => {
+                          const albumKey = `${album.name}__${album.artist}`;
+                          const isCurrentAlbum = albumKey === currentSongAlbumKey;
+                          return (
+                            <div
+                              key={albumKey}
+                              onClick={() => {
+                                setSelectedAlbum(albumKey);
+                                setViewMode("album-detail");
+                              }}
+                              className={`album-card cursor-pointer group ${
+                                isCurrentAlbum ? "album-playing" : ""
+                              }`}
+                            >
+                              <div className="album-card-cover">
+                                {album.cover ? (
+                                  <LazyImage
+                                    src={album.cover}
+                                    alt={album.name}
+                                    className="w-full h-full object-cover"
+                                    placeholderClassName="w-full h-full"
+                                  />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-neutral-800 to-neutral-900">
+                                    <svg className="w-12 h-12 text-white/20" fill="currentColor" viewBox="0 0 24 24">
+                                      <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
+                                    </svg>
+                                  </div>
+                                )}
+                                <div className="album-card-overlay">
+                                  <svg className="w-12 h-12 text-white" fill="currentColor" viewBox="0 0 24 24">
+                                    <path d="M8 5v14l11-7z" />
+                                  </svg>
+                                </div>
+                              </div>
+                              <div className="mt-3 px-1">
+                                <p className="text-sm font-medium truncate text-white/90">{album.name}</p>
+                                <p className="text-xs text-white/40 truncate mt-0.5">{album.artist}</p>
+                                <p className="text-xs text-white/30 mt-1">{album.trackIndices.length} tracks</p>
+                              </div>
+                              {isCurrentAlbum && (
+                                <div className="absolute top-2 right-2 playing-indicator">
+                                  <span></span><span></span><span></span>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="flex flex-col items-center justify-center py-16 gap-4">
@@ -634,6 +969,46 @@ const LibraryViewBase: React.FC<LibraryViewProps> = ({
 
               {!isRestoringLayout && (
               <div className="flex-1 w-full overflow-y-auto lyrics-scroll p-8 md:px-16">
+                {/* Inline Search & Sort for Artists */}
+                <div className="flex items-center justify-end gap-3 mb-4">
+                  <div className="relative w-64">
+                    <input
+                      type="text"
+                      placeholder="Search artists..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 pl-10 text-sm text-white placeholder-white/30 focus:outline-none focus:border-white/30 transition-colors"
+                    />
+                    <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    {searchQuery && (
+                      <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white transition-colors">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <button onClick={() => setShowSortMenu(!showSortMenu)} className={`p-2 rounded-lg transition-colors ${sortMode !== 'default' ? 'bg-white/20 text-white' : 'bg-white/5 text-white/50 hover:text-white hover:bg-white/10'}`} title="Sort options">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" />
+                      </svg>
+                    </button>
+                    {showSortMenu && (
+                      <>
+                        <div className="fixed inset-0 z-40" onClick={() => setShowSortMenu(false)} />
+                        <div className="absolute right-0 top-full mt-2 w-40 bg-neutral-900 border border-white/10 rounded-lg shadow-xl z-50 overflow-hidden">
+                          <button onClick={() => { setSortMode('default'); setShowSortMenu(false); }} className={`w-full px-4 py-2.5 text-left text-sm flex items-center gap-2 transition-colors ${sortMode === 'default' ? 'bg-white/10 text-white' : 'text-white/70 hover:bg-white/5 hover:text-white'}`}>Default</button>
+                          <button onClick={() => { setSortMode('alpha'); setShowSortMenu(false); }} className={`w-full px-4 py-2.5 text-left text-sm flex items-center gap-2 transition-colors ${sortMode === 'alpha' ? 'bg-white/10 text-white' : 'text-white/70 hover:bg-white/5 hover:text-white'}`}>A-Z</button>
+                          <button onClick={() => { setSortMode('alpha-desc'); setShowSortMenu(false); }} className={`w-full px-4 py-2.5 text-left text-sm flex items-center gap-2 transition-colors ${sortMode === 'alpha-desc' ? 'bg-white/10 text-white' : 'text-white/70 hover:bg-white/5 hover:text-white'}`}>Z-A</button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+                
                 {!metadataLoaded && playlistItems.length > 0 ? (
                   <div className="flex flex-col items-center justify-center py-16 gap-4">
                     <div className="loading-spinner"></div>
@@ -641,78 +1016,114 @@ const LibraryViewBase: React.FC<LibraryViewProps> = ({
                       Loading metadata...
                     </p>
                   </div>
-                ) : artists.length > 0 ? (
-                  <div
-                    ref={artistsContainerRef}
-                    className="flex flex-col gap-2"
-                  >
-                    {artists.map((artist) => {
-                      const isCurrentArtist = artist.name === currentSongArtist;
-                      return (
-                        <div
-                          key={artist.name}
-                          onClick={() => {
-                            setSelectedArtist(artist.name);
-                            setViewMode("artist-detail");
-                          }}
-                          className={`artist-item virtual-list-item p-4 rounded-lg cursor-pointer flex items-center gap-4 ${
-                            isCurrentArtist ? "active" : ""
-                          }`}
-                        >
-                          <div className="w-10 h-10 rounded-full shrink-0 overflow-hidden">
-                            {artist.cover ? (
-                              <LazyImage
-                                src={artist.cover}
-                                alt={artist.name}
-                                className="w-full h-full object-cover"
-                                placeholderClassName="w-full h-full rounded-full"
-                              />
-                            ) : (
-                              <div className="w-full h-full bg-gradient-to-br from-neutral-700 to-neutral-900 flex items-center justify-center">
-                                <svg
-                                  className="w-5 h-5 text-white/40"
-                                  fill="currentColor"
-                                  viewBox="0 0 24 24"
+                ) : filteredArtists.length > 0 ? (
+                  <div ref={artistsContainerRef} className="space-y-6">
+                    {groupedArtists ? (
+                      // Grouped view with section headers
+                      groupedArtists.map(group => (
+                        <div key={group.header}>
+                          <h2 className="text-xl font-bold text-white/80 mb-3 pt-4 border-b border-white/10 pb-2">
+                            {group.header}
+                          </h2>
+                          <div className="flex flex-col gap-2">
+                            {group.artists.map((artist) => {
+                              const isCurrentArtist = artist.name === currentSongArtist;
+                              return (
+                                <div
+                                  key={artist.name}
+                                  onClick={() => {
+                                    setSelectedArtist(artist.name);
+                                    setViewMode("artist-detail");
+                                  }}
+                                  className={`artist-item virtual-list-item p-4 rounded-lg cursor-pointer flex items-center gap-4 ${
+                                    isCurrentArtist ? "active" : ""
+                                  }`}
                                 >
-                                  <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
-                                </svg>
-                              </div>
-                            )}
+                                  <div className="w-10 h-10 rounded-full shrink-0 overflow-hidden">
+                                    {artist.cover ? (
+                                      <LazyImage
+                                        src={artist.cover}
+                                        alt={artist.name}
+                                        className="w-full h-full object-cover"
+                                        placeholderClassName="w-full h-full rounded-full"
+                                      />
+                                    ) : (
+                                      <div className="w-full h-full bg-gradient-to-br from-neutral-700 to-neutral-900 flex items-center justify-center">
+                                        <svg className="w-5 h-5 text-white/40" fill="currentColor" viewBox="0 0 24 24">
+                                          <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+                                        </svg>
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-medium truncate text-white/90">{artist.name}</p>
+                                    <p className="text-xs text-white/40">
+                                      {artist.albumCount} album{artist.albumCount > 1 ? "s" : ""} • {artist.trackIndices.length} tracks
+                                    </p>
+                                  </div>
+                                  {isCurrentArtist ? (
+                                    <div className="playing-indicator"><span></span><span></span><span></span></div>
+                                  ) : (
+                                    <svg className="w-5 h-5 text-white/20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                    </svg>
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate text-white/90">
-                              {artist.name}
-                            </p>
-                            <p className="text-xs text-white/40">
-                              {artist.albumCount} album
-                              {artist.albumCount > 1 ? "s" : ""} •{" "}
-                              {artist.trackIndices.length} tracks
-                            </p>
-                          </div>
-                          {isCurrentArtist ? (
-                            <div className="playing-indicator">
-                              <span></span>
-                              <span></span>
-                              <span></span>
-                            </div>
-                          ) : (
-                            <svg
-                              className="w-5 h-5 text-white/20"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M9 5l7 7-7 7"
-                              />
-                            </svg>
-                          )}
                         </div>
-                      );
-                    })}
+                      ))
+                    ) : (
+                      // Default flat list view
+                      <div className="flex flex-col gap-2">
+                        {filteredArtists.map((artist) => {
+                          const isCurrentArtist = artist.name === currentSongArtist;
+                          return (
+                            <div
+                              key={artist.name}
+                              onClick={() => {
+                                setSelectedArtist(artist.name);
+                                setViewMode("artist-detail");
+                              }}
+                              className={`artist-item virtual-list-item p-4 rounded-lg cursor-pointer flex items-center gap-4 ${
+                                isCurrentArtist ? "active" : ""
+                              }`}
+                            >
+                              <div className="w-10 h-10 rounded-full shrink-0 overflow-hidden">
+                                {artist.cover ? (
+                                  <LazyImage
+                                    src={artist.cover}
+                                    alt={artist.name}
+                                    className="w-full h-full object-cover"
+                                    placeholderClassName="w-full h-full rounded-full"
+                                  />
+                                ) : (
+                                  <div className="w-full h-full bg-gradient-to-br from-neutral-700 to-neutral-900 flex items-center justify-center">
+                                    <svg className="w-5 h-5 text-white/40" fill="currentColor" viewBox="0 0 24 24">
+                                      <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+                                    </svg>
+                                  </div>
+                                )}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium truncate text-white/90">{artist.name}</p>
+                                <p className="text-xs text-white/40">
+                                  {artist.albumCount} album{artist.albumCount > 1 ? "s" : ""} • {artist.trackIndices.length} tracks
+                                </p>
+                              </div>
+                              {isCurrentArtist ? (
+                                <div className="playing-indicator"><span></span><span></span><span></span></div>
+                              ) : (
+                                <svg className="w-5 h-5 text-white/20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                </svg>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="flex flex-col items-center justify-center py-16 gap-4">

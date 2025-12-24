@@ -14,6 +14,7 @@ export interface SongMetadata {
   artist: string;
   album?: string;
   cover?: string;
+  year?: number;
 }
 
 export interface SongState {
@@ -36,6 +37,7 @@ export interface AlbumInfo {
   artist: string;
   cover?: string;
   trackIndices: number[]; // Indices in playlistItems
+  year?: number;
 }
 
 export interface ArtistInfo {
@@ -52,4 +54,5 @@ export interface PlaylistItemMetadata {
   album: string;
   cover?: string;
   duration?: number;
+  year?: number;
 }

@@ -54,7 +54,8 @@ export const extractMetadata = async (file: File): Promise<SongMetadata> => {
       title: title || "Unknown Title",
       artist: artist || "Unknown Artist",
       album: album || "Unknown Album",
-      cover
+      cover,
+      year: common.year
     };
   } catch (e) {
     console.error("Error parsing metadata:", e);
