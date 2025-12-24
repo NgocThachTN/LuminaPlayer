@@ -6,11 +6,12 @@ A minimalist music player with synchronized lyrics, high-res audio support, and 
 
 Windows App:
 
-<img width="1919" height="1032" alt="image" src="https://github.com/user-attachments/assets/7e3bbd90-6a8e-4e0a-9601-bc19e0b58a86" />
-
+<img width="1919" height="1079" alt="image" src="https://github.com/user-attachments/assets/85a4c21c-a4b4-4ab2-84ea-a118780bbcdf" />
 
 
 <img width="1919" height="1079" alt="image" src="https://github.com/user-attachments/assets/01778150-f732-4c9c-99af-8c8d3a20e285" />
+
+<img width="1919" height="1079" alt="image" src="https://github.com/user-attachments/assets/3b223244-4346-411d-8cf6-481b56bd7533" />
 
 
 
