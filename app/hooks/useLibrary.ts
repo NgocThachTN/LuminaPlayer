@@ -31,6 +31,23 @@ export const useLibrary = (
     );
   };
 
+  const preloadDiscordCover = (metadata?: PlaylistItemMetadata) => {
+    const electronAPI = (window as any).electronAPI;
+    if (!isElectron || !electronAPI?.preloadDiscordCover || !metadata?.title || !metadata?.artist) {
+      return;
+    }
+
+    if (metadata.artist === "Unknown Artist") {
+      return;
+    }
+
+    void electronAPI.preloadDiscordCover({
+      title: metadata.title,
+      artist: metadata.artist,
+      album: metadata.album || "Unknown Album",
+    });
+  };
+
   // Load saved playlist on startup (Electron only)
   useEffect(() => {
     const loadSavedPlaylist = async () => {
@@ -96,8 +113,14 @@ export const useLibrary = (
 
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
-      // If we already have cover art, skip. 
-      // If we have text metadata but NO cover, we let it run to get cover.
+      // Discord cover art is now resolved via external cache, so preload it
+      // even when the local track already has embedded artwork.
+      if (item.metadata?.title && item.metadata?.artist) {
+        preloadDiscordCover(item.metadata);
+      }
+
+      // If we already have local metadata cover art, we can keep it for the UI
+      // and skip re-reading the file itself.
       if (item.metadata?.cover) continue;
 
       try {
@@ -149,6 +172,7 @@ export const useLibrary = (
         }
 
         updatedItems[i] = { ...item, metadata };
+        preloadDiscordCover(metadata);
       } catch (e) {
         console.error("Error loading metadata for", item.name, e);
         updatedItems[i] = {

@@ -165,6 +165,14 @@ export const useAudio = (
         console.error("Error extracting metadata:", e);
       }
 
+      if (isElectron && electronAPI?.preloadDiscordCover && finalArtist !== "Unknown Artist") {
+        void electronAPI.preloadDiscordCover({
+          title: finalTitle,
+          artist: finalArtist,
+          album: finalMetadata.album || metadataAlbum,
+        });
+      }
+
       setState((prev) => {
         if (prev.currentSongIndex === index) {
           return { ...prev, metadata: finalMetadata };

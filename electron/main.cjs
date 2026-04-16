@@ -9,6 +9,11 @@ require("dotenv").config({ path: path.join(__dirname, "../.env") });
 // Create your app at: https://discord.com/developers/applications
 
 const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID; // Loaded from .env
+const COVER_LOOKUP_USER_AGENT = "LuminaPlayer/2.1 (Discord Rich Presence cover lookup)";
+const YOUTUBE_MUSIC_HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
+  "Accept-Language": "en-US,en;q=0.9",
+};
 let rpc = null;
 let rpcReady = false;
 let lastPresence = null; // Cache for reconnection
@@ -111,6 +116,7 @@ async function initDiscordRPC() {
 // Cache for cover art to avoid redundant API calls
 // Cover Art Caching System
 const COVERS_DIR = path.join(app.getPath("userData"), "covers");
+const COVER_LOOKUP_CACHE_PATH = path.join(app.getPath("userData"), "cover-lookup-cache.json");
 if (!fs.existsSync(COVERS_DIR)) {
   fs.mkdirSync(COVERS_DIR, { recursive: true });
 }
@@ -126,11 +132,63 @@ function getCoverHash(filePath) {
   }
 }
 
-// Cache for cover art to avoid redundant API calls (Runtime memory cache for Apple Music/Discord)
+// Cache for cover art to avoid redundant API calls (Runtime memory cache for Discord cover lookups)
 const coverCache = new Map();
 const coverFetchInFlight = new Map();
-const COVER_CACHE_HIT_TTL_MS = 1000 * 60 * 60 * 12;
-const COVER_CACHE_MISS_TTL_MS = 1000 * 60 * 10;
+const COVER_CACHE_HIT_TTL_MS = 1000 * 60 * 60 * 24 * 14;
+const COVER_CACHE_MISS_TTL_MS = 1000 * 60 * 2;
+const YOUTUBE_MUSIC_CONFIG_TTL_MS = 1000 * 60 * 60 * 12;
+let coverCachePersistTimer = null;
+let youTubeMusicConfig = null;
+let youTubeMusicConfigFetchedAt = 0;
+let youTubeMusicConfigInFlight = null;
+
+function loadPersistedCoverCache() {
+  try {
+    if (!fs.existsSync(COVER_LOOKUP_CACHE_PATH)) return;
+
+    const raw = JSON.parse(fs.readFileSync(COVER_LOOKUP_CACHE_PATH, "utf8"));
+    const now = Date.now();
+
+    for (const [key, entry] of Object.entries(raw)) {
+      if (!entry || typeof entry.url !== "string" || typeof entry.expiresAt !== "number") {
+        continue;
+      }
+
+      if (entry.expiresAt > now) {
+        coverCache.set(key, entry);
+      }
+    }
+  } catch (error) {
+    console.error("Failed to load cover cache:", error);
+  }
+}
+
+function persistCoverCache() {
+  try {
+    const serializable = {};
+
+    for (const [key, entry] of coverCache.entries()) {
+      if (!entry?.url || entry.expiresAt <= Date.now()) continue;
+      serializable[key] = entry;
+    }
+
+    fs.writeFileSync(COVER_LOOKUP_CACHE_PATH, JSON.stringify(serializable, null, 2));
+  } catch (error) {
+    console.error("Failed to persist cover cache:", error);
+  }
+}
+
+function schedulePersistCoverCache() {
+  if (coverCachePersistTimer) return;
+
+  coverCachePersistTimer = setTimeout(() => {
+    coverCachePersistTimer = null;
+    persistCoverCache();
+  }, 500);
+}
+
+loadPersistedCoverCache();
 
 function normalizeCoverQueryPart(value) {
   return String(value || "")
@@ -157,12 +215,28 @@ function getCachedCover(key) {
     return undefined;
   }
 
+  if (typeof entry.url === "string" && entry.url) {
+    const normalizedUrl = normalizeCoverSourceUrl(entry.url) || entry.url;
+    if (normalizedUrl !== entry.url) {
+      entry.url = normalizedUrl;
+      schedulePersistCoverCache();
+    }
+  }
+
   return entry.url;
 }
 
 function setCachedCover(key, url, isMiss = false) {
+  const normalizedRawUrl =
+    !isMiss && typeof url === "string" && url
+      ? normalizeCoverSourceUrl(url)
+      : url;
+
+  const normalizedUrl =
+    !isMiss ? normalizedRawUrl : url;
+
   coverCache.set(key, {
-    url,
+    url: normalizedUrl,
     expiresAt: Date.now() + (isMiss ? COVER_CACHE_MISS_TTL_MS : COVER_CACHE_HIT_TTL_MS),
   });
 
@@ -170,9 +244,13 @@ function setCachedCover(key, url, isMiss = false) {
     const firstKey = coverCache.keys().next().value;
     coverCache.delete(firstKey);
   }
+
+  if (!isMiss && typeof normalizedUrl === "string" && normalizedUrl) {
+    schedulePersistCoverCache();
+  }
 }
 
-function stripAppleSearchNoise(value) {
+function stripCoverSearchNoise(value) {
   return String(value || "")
     .normalize("NFKC")
     .replace(/\u00A0/g, " ")
@@ -184,96 +262,568 @@ function stripAppleSearchNoise(value) {
     .trim();
 }
 
-function containsJapanese(text) {
-  return /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]/.test(String(text || ""));
+function sanitizeCoverLookupValue(value) {
+  return stripCoverSearchNoise(value)
+    .replace(/["\\]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-function buildAppleMusicQueries(title, artist, album) {
-  const raw = {
-    title: String(title || "").trim(),
-    artist: String(artist || "").trim(),
-    album: String(album || "").trim(),
-  };
-  const clean = {
-    title: stripAppleSearchNoise(raw.title),
-    artist: stripAppleSearchNoise(raw.artist),
-    album: stripAppleSearchNoise(raw.album),
-  };
+function buildDeezerSearchAttempts(title, artist, album) {
+  const cleanArtist = sanitizeCoverLookupValue(artist);
+  const cleanTitle = sanitizeCoverLookupValue(title);
+  const cleanAlbum = sanitizeCoverLookupValue(album);
+  const releaseName = cleanAlbum && cleanAlbum !== "unknown album" ? cleanAlbum : "";
+  const attempts = [
+    cleanArtist && cleanTitle
+      ? { mode: "track", query: `artist:"${cleanArtist}" track:"${cleanTitle}"` }
+      : null,
+    cleanArtist && releaseName
+      ? { mode: "album", query: `artist:"${cleanArtist}" album:"${releaseName}"` }
+      : null,
+    cleanArtist && cleanTitle
+      ? { mode: "track", query: `${cleanArtist} ${cleanTitle}` }
+      : null,
+    cleanArtist && releaseName
+      ? { mode: "album", query: `${cleanArtist} ${releaseName}` }
+      : null,
+    cleanTitle ? { mode: "track", query: cleanTitle } : null,
+    releaseName ? { mode: "album", query: releaseName } : null,
+  ].filter(Boolean);
 
-  return [
-    [raw.artist, raw.title],
-    [clean.artist, clean.title],
-    [raw.artist, raw.album, raw.title],
-    [clean.artist, clean.album, clean.title],
-    [clean.artist, clean.album],
-    [raw.artist, raw.album],
-    [clean.album, clean.artist],
-    [clean.title],
-    [raw.title],
-  ]
-    .map((parts) => parts.filter(Boolean).join(" ").trim())
-    .filter(Boolean)
-    .filter((query, index, arr) => arr.indexOf(query) === index);
+  return attempts.filter(
+    (attempt, index, arr) =>
+      arr.findIndex(
+        (candidate) => candidate.mode === attempt.mode && candidate.query === attempt.query
+      ) === index
+  );
 }
 
-function getAppleStorefronts(title, artist, album) {
-  const combined = `${title || ""} ${artist || ""} ${album || ""}`;
-  const storefronts = [undefined, "US"];
+function buildITunesSearchAttempts(title, artist, album) {
+  const cleanArtist = sanitizeCoverLookupValue(artist);
+  const cleanTitle = sanitizeCoverLookupValue(title);
+  const cleanAlbum = sanitizeCoverLookupValue(album);
+  const releaseName = cleanAlbum && cleanAlbum !== "unknown album" ? cleanAlbum : "";
+  const attempts = [
+    cleanArtist && cleanTitle
+      ? { entity: "song", mode: "track", query: `${cleanArtist} ${cleanTitle}` }
+      : null,
+    cleanArtist && releaseName
+      ? { entity: "album", mode: "album", query: `${cleanArtist} ${releaseName}` }
+      : null,
+    cleanTitle ? { entity: "song", mode: "track", query: cleanTitle } : null,
+    releaseName ? { entity: "album", mode: "album", query: releaseName } : null,
+  ].filter(Boolean);
 
-  if (containsJapanese(combined)) {
-    storefronts.splice(1, 0, "JP");
+  return attempts.filter(
+    (attempt, index, arr) =>
+      arr.findIndex(
+        (candidate) =>
+          candidate.entity === attempt.entity &&
+          candidate.mode === attempt.mode &&
+          candidate.query === attempt.query
+      ) === index
+  );
+}
+
+function buildYouTubeMusicSearchAttempts(title, artist, album) {
+  const cleanArtist = sanitizeCoverLookupValue(artist);
+  const cleanTitle = sanitizeCoverLookupValue(title);
+  const cleanAlbum = sanitizeCoverLookupValue(album);
+  const releaseName = cleanAlbum && cleanAlbum !== "unknown album" ? cleanAlbum : "";
+  const attempts = [
+    cleanArtist && cleanTitle
+      ? { mode: "track", query: `${cleanArtist} ${cleanTitle}` }
+      : null,
+    cleanArtist && releaseName
+      ? { mode: "album", query: `${cleanArtist} ${releaseName}` }
+      : null,
+    cleanTitle ? { mode: "track", query: cleanTitle } : null,
+    releaseName ? { mode: "album", query: releaseName } : null,
+  ].filter(Boolean);
+
+  return attempts.filter(
+    (attempt, index, arr) =>
+      arr.findIndex(
+        (candidate) => candidate.mode === attempt.mode && candidate.query === attempt.query
+      ) === index
+  );
+}
+
+function normalizeComparable(value) {
+  return normalizeCoverQueryPart(stripCoverSearchNoise(value));
+}
+
+function isLikelyDeezerMatch(result, title, artist, album, mode) {
+  const wantedArtist = normalizeComparable(artist);
+  const wantedTitle = normalizeComparable(title);
+  const wantedAlbum = normalizeComparable(album === "Unknown Album" ? "" : album);
+  const resultArtist = normalizeComparable(result?.artist?.name);
+  const resultTitle = normalizeComparable(result?.title);
+  const resultAlbum = normalizeComparable(result?.album?.title);
+
+  const artistMatches =
+    !wantedArtist ||
+    resultArtist.includes(wantedArtist) ||
+    wantedArtist.includes(resultArtist);
+
+  if (!artistMatches) return false;
+
+  if (mode === "album") {
+    return !!wantedAlbum && !!resultAlbum &&
+      (resultAlbum.includes(wantedAlbum) || wantedAlbum.includes(resultAlbum));
   }
 
-  return storefronts;
+  if (!wantedTitle || !resultTitle) return artistMatches;
+  return resultTitle.includes(wantedTitle) || wantedTitle.includes(resultTitle);
 }
 
-async function searchAppleMusicArtwork(term, entity, country) {
-  const params = new URLSearchParams({
-    term,
-    media: "music",
-    entity,
-    limit: "5",
-  });
-
-  if (country) {
-    params.set("country", country);
-  }
-
+async function searchDeezer(query) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5000);
 
   try {
-    const response = await fetch(`https://itunes.apple.com/search?${params.toString()}`, {
+    const response = await fetch(`https://api.deezer.com/search?q=${encodeURIComponent(query)}`, {
       signal: controller.signal,
       headers: {
         "Accept": "application/json",
-        "Accept-Language": "ja,en-US;q=0.9,en;q=0.8",
-        "User-Agent": "LuminaPlayer/2.1 DiscordRPC",
+        "User-Agent": COVER_LOOKUP_USER_AGENT,
       },
     });
 
     if (!response.ok) {
-      throw new Error(`Apple Music search failed: ${response.status}`);
+      throw new Error(`Deezer search failed: ${response.status}`);
     }
 
     const data = await response.json();
-    if (!data?.resultCount || !Array.isArray(data.results)) {
-      return null;
-    }
-
-    for (const result of data.results) {
-      if (result?.artworkUrl100) {
-        return result.artworkUrl100.replace(/100x100bb/g, "600x600bb");
-      }
-    }
+    return Array.isArray(data.data) ? data.data : [];
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+async function searchITunes(query, entity) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+
+  try {
+    const params = new URLSearchParams({
+      term: query,
+      media: "music",
+      entity,
+      limit: "5",
+    });
+    const response = await fetch(`https://itunes.apple.com/search?${params.toString()}`, {
+      signal: controller.signal,
+      headers: {
+        "Accept": "application/json",
+        "User-Agent": COVER_LOOKUP_USER_AGENT,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`iTunes search failed: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return Array.isArray(data.results) ? data.results : [];
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function getYouTubeMusicConfig(forceRefresh = false) {
+  const isFresh =
+    !forceRefresh &&
+    youTubeMusicConfig &&
+    Date.now() - youTubeMusicConfigFetchedAt < YOUTUBE_MUSIC_CONFIG_TTL_MS;
+
+  if (isFresh) {
+    return youTubeMusicConfig;
+  }
+
+  if (!forceRefresh && youTubeMusicConfigInFlight) {
+    return youTubeMusicConfigInFlight;
+  }
+
+  const request = (async () => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+
+    try {
+      const response = await fetch("https://music.youtube.com/", {
+        signal: controller.signal,
+        headers: YOUTUBE_MUSIC_HEADERS,
+      });
+
+      if (!response.ok) {
+        throw new Error(`YouTube Music bootstrap failed: ${response.status}`);
+      }
+
+      const html = await response.text();
+      const apiKeyMatch = html.match(/"INNERTUBE_API_KEY":"([^"]+)"/);
+      const contextMatch = html.match(/"INNERTUBE_CONTEXT":(\{.*?\}),"INNERTUBE_CONTEXT_CLIENT_NAME"/s);
+
+      if (!apiKeyMatch || !contextMatch) {
+        throw new Error("YouTube Music bootstrap payload missing API config");
+      }
+
+      youTubeMusicConfig = {
+        apiKey: apiKeyMatch[1],
+        context: JSON.parse(contextMatch[1]),
+      };
+      youTubeMusicConfigFetchedAt = Date.now();
+      return youTubeMusicConfig;
+    } finally {
+      clearTimeout(timeout);
+    }
+  })();
+
+  youTubeMusicConfigInFlight = request;
+
+  try {
+    return await request;
+  } finally {
+    if (youTubeMusicConfigInFlight === request) {
+      youTubeMusicConfigInFlight = null;
+    }
+  }
+}
+
+function getRunsText(runs) {
+  return Array.isArray(runs)
+    ? runs.map((run) => run?.text || "").join("").trim()
+    : "";
+}
+
+function getYouTubeMusicTextSegments(runs) {
+  return getRunsText(runs)
+    .split("•")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function getYouTubeMusicThumbnailUrl(thumbnails) {
+  if (!Array.isArray(thumbnails) || thumbnails.length === 0) {
+    return null;
+  }
+
+  const bestThumbnail = thumbnails.reduce((best, current) => {
+    const bestScore = (best?.width || 0) * (best?.height || 0);
+    const currentScore = (current?.width || 0) * (current?.height || 0);
+    return currentScore >= bestScore ? current : best;
+  }, null);
+
+  return normalizeCoverSourceUrl(bestThumbnail?.url) || bestThumbnail?.url || null;
+}
+
+function buildYouTubeMusicCardCandidate(renderer) {
+  const title = getRunsText(renderer?.title?.runs);
+  const subtitleSegments = getYouTubeMusicTextSegments(renderer?.subtitle?.runs);
+  const type = normalizeCoverQueryPart(subtitleSegments[0]);
+  const artist = subtitleSegments[1] || "";
+  const thumbnailUrl = getYouTubeMusicThumbnailUrl(
+    renderer?.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails
+  );
+
+  if (!title || !thumbnailUrl || (type !== "album" && type !== "song")) {
+    return null;
+  }
+
+  return {
+    type,
+    title: type === "song" ? title : "",
+    album: type === "album" ? title : "",
+    artist,
+    thumbnailUrl,
+  };
+}
+
+function buildYouTubeMusicItemCandidate(renderer) {
+  const title = getRunsText(
+    renderer?.flexColumns?.[0]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs
+  );
+  const subtitleSegments = getYouTubeMusicTextSegments(
+    renderer?.flexColumns?.[1]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs
+  );
+  const type = normalizeCoverQueryPart(subtitleSegments[0]);
+  const artist = subtitleSegments[1] || "";
+  const thumbnailUrl = getYouTubeMusicThumbnailUrl(
+    renderer?.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails
+  );
+
+  if (!title || !thumbnailUrl || (type !== "album" && type !== "song")) {
+    return null;
+  }
+
+  return {
+    type,
+    title: type === "song" ? title : "",
+    album: type === "album" ? title : "",
+    artist,
+    thumbnailUrl,
+  };
+}
+
+function collectYouTubeMusicCandidates(node, results = []) {
+  if (!node || typeof node !== "object") {
+    return results;
+  }
+
+  if (Array.isArray(node)) {
+    for (const entry of node) {
+      collectYouTubeMusicCandidates(entry, results);
+    }
+    return results;
+  }
+
+  if (node.musicCardShelfRenderer) {
+    const candidate = buildYouTubeMusicCardCandidate(node.musicCardShelfRenderer);
+    if (candidate) {
+      results.push(candidate);
+    }
+  }
+
+  if (node.musicResponsiveListItemRenderer) {
+    const candidate = buildYouTubeMusicItemCandidate(node.musicResponsiveListItemRenderer);
+    if (candidate) {
+      results.push(candidate);
+    }
+  }
+
+  for (const value of Object.values(node)) {
+    collectYouTubeMusicCandidates(value, results);
+  }
+
+  return results;
+}
+
+async function searchYouTubeMusic(query, forceRefresh = false) {
+  const config = await getYouTubeMusicConfig(forceRefresh);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+
+  try {
+    const context = JSON.parse(JSON.stringify(config.context));
+    if (context?.client) {
+      context.client.originalUrl = `https://music.youtube.com/search?q=${encodeURIComponent(query)}`;
+    }
+
+    const response = await fetch(
+      `https://music.youtube.com/youtubei/v1/search?prettyPrint=false&key=${config.apiKey}`,
+      {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          ...YOUTUBE_MUSIC_HEADERS,
+          "Accept": "application/json",
+          "Content-Type": "application/json",
+          "Origin": "https://music.youtube.com",
+          "Referer": `https://music.youtube.com/search?q=${encodeURIComponent(query)}`,
+        },
+        body: JSON.stringify({
+          context,
+          query,
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      if (!forceRefresh) {
+        return searchYouTubeMusic(query, true);
+      }
+
+      throw new Error(`YouTube Music search failed: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return collectYouTubeMusicCandidates(data);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function getDeezerCoverUrl(result) {
+  return (
+    result?.album?.cover_xl ||
+    result?.album?.cover_big ||
+    result?.album?.cover_medium ||
+    result?.album?.cover ||
+    null
+  );
+}
+
+function getITunesCoverUrl(result) {
+  const artworkUrl =
+    result?.artworkUrl100 ||
+    result?.artworkUrl60 ||
+    null;
+
+  if (!artworkUrl || typeof artworkUrl !== "string") {
+    return null;
+  }
+
+  return artworkUrl.replace(/(\d+)x(\d+)bb(?=[-/.])/i, "600x600bb");
+}
+
+function normalizeCoverSourceUrl(url) {
+  if (!url || !/^https?:\/\//i.test(url)) {
+    return null;
+  }
+
+  try {
+    let current = url;
+
+    for (let i = 0; i < 3; i++) {
+      const parsed = new URL(current);
+      if (parsed.hostname !== "wsrv.nl") {
+        return current;
+      }
+
+      const nested = parsed.searchParams.get("url");
+      if (!nested || !/^https?:\/\//i.test(nested)) {
+        return current;
+      }
+
+      current = nested;
+    }
+
+    return current;
+  } catch {
+    return url;
+  }
+}
+
+function isLikelyITunesMatch(result, title, artist, album, mode) {
+  const wantedArtist = normalizeComparable(artist);
+  const wantedTitle = normalizeComparable(title);
+  const wantedAlbum = normalizeComparable(album === "Unknown Album" ? "" : album);
+  const resultArtist = normalizeComparable(result?.artistName);
+  const resultTitle = normalizeComparable(
+    result?.trackName || result?.trackCensoredName || result?.collectionName
+  );
+  const resultAlbum = normalizeComparable(result?.collectionName);
+
+  const artistMatches =
+    !wantedArtist ||
+    resultArtist.includes(wantedArtist) ||
+    wantedArtist.includes(resultArtist);
+
+  if (!artistMatches) return false;
+
+  if (mode === "album") {
+    return !!wantedAlbum && !!resultAlbum &&
+      (resultAlbum.includes(wantedAlbum) || wantedAlbum.includes(resultAlbum));
+  }
+
+  if (!wantedTitle || !resultTitle) return artistMatches;
+  return resultTitle.includes(wantedTitle) || wantedTitle.includes(resultTitle);
+}
+
+function isLikelyYouTubeMusicMatch(result, title, artist, album, mode) {
+  const wantedArtist = normalizeComparable(artist);
+  const wantedTitle = normalizeComparable(title);
+  const wantedAlbum = normalizeComparable(album === "Unknown Album" ? "" : album);
+  const resultArtist = normalizeComparable(result?.artist);
+  const resultTitle = normalizeComparable(result?.title);
+  const resultAlbum = normalizeComparable(result?.album);
+
+  const artistMatches =
+    !wantedArtist ||
+    resultArtist.includes(wantedArtist) ||
+    wantedArtist.includes(resultArtist);
+
+  if (!artistMatches) return false;
+
+  if (mode === "album") {
+    return result?.type === "album" && !!wantedAlbum && !!resultAlbum &&
+      (resultAlbum.includes(wantedAlbum) || wantedAlbum.includes(resultAlbum));
+  }
+
+  return result?.type === "song" &&
+    !!wantedTitle &&
+    !!resultTitle &&
+    (resultTitle.includes(wantedTitle) || wantedTitle.includes(resultTitle));
+}
+
+async function fetchCoverArtFromITunes(title, artist, album) {
+  const attempts = buildITunesSearchAttempts(title, artist, album);
+
+  for (const attempt of attempts) {
+    if (!attempt.query) continue;
+
+    try {
+      const results = await searchITunes(attempt.query, attempt.entity);
+      for (const result of results) {
+        if (!isLikelyITunesMatch(result, title, artist, album, attempt.mode)) {
+          continue;
+        }
+
+        const url = getITunesCoverUrl(result);
+        if (url) {
+          return url;
+        }
+      }
+    } catch (error) {
+      console.error(`Cover Fetch Error (iTunes ${attempt.entity}: ${attempt.query}):`, error.message);
+    }
   }
 
   return null;
 }
 
-// Helper: Fetch cover art from Apple Music/iTunes with multiple search passes.
+async function fetchCoverArtFromYouTubeMusic(title, artist, album) {
+  const attempts = buildYouTubeMusicSearchAttempts(title, artist, album);
+
+  for (const attempt of attempts) {
+    if (!attempt.query) continue;
+
+    try {
+      const results = await searchYouTubeMusic(attempt.query);
+      for (const result of results.slice(0, 12)) {
+        if (!isLikelyYouTubeMusicMatch(result, title, artist, album, attempt.mode)) {
+          continue;
+        }
+
+        if (result.thumbnailUrl) {
+          return result.thumbnailUrl;
+        }
+      }
+    } catch (error) {
+      console.error(`Cover Fetch Error (YouTube Music ${attempt.mode}: ${attempt.query}):`, error.message);
+    }
+  }
+
+  return null;
+}
+
+async function fetchCoverArtFromDeezer(title, artist, album) {
+  const attempts = buildDeezerSearchAttempts(title, artist, album);
+
+  for (const attempt of attempts) {
+    if (!attempt.query) continue;
+
+    try {
+      const results = await searchDeezer(attempt.query);
+      for (const result of results.slice(0, 3)) {
+        if (!isLikelyDeezerMatch(result, title, artist, album, attempt.mode)) {
+          continue;
+        }
+
+        const url = getDeezerCoverUrl(result);
+        if (url) {
+          return url;
+        }
+      }
+    } catch (error) {
+      console.error(`Cover Fetch Error (${attempt.mode}: ${attempt.query}):`, error.message);
+    }
+  }
+
+  return null;
+}
+
+// Helper: Fetch cover art from Apple/iTunes first, then YouTube Music, then Deezer.
 async function fetchCoverArt(title, artist, album) {
   const key = getCoverLookupKey(title, artist, album);
   const cachedUrl = getCachedCover(key);
@@ -285,22 +835,17 @@ async function fetchCoverArt(title, artist, album) {
 
   const request = (async () => {
     try {
-      const queries = buildAppleMusicQueries(title, artist, album);
-      const storefronts = getAppleStorefronts(title, artist, album);
+      const providers = [
+        () => fetchCoverArtFromITunes(title, artist, album),
+        () => fetchCoverArtFromYouTubeMusic(title, artist, album),
+        () => fetchCoverArtFromDeezer(title, artist, album),
+      ];
 
-      for (const query of queries) {
-        for (const entity of ["song", "album"]) {
-          for (const country of storefronts) {
-            try {
-              const url = await searchAppleMusicArtwork(query, entity, country);
-              if (url) {
-                setCachedCover(key, url, false);
-                return url;
-              }
-            } catch (error) {
-              console.error(`Cover Fetch Error (${query}${country ? `/${country}` : ""}/${entity}):`, error.message);
-            }
-          }
+      for (const resolveCover of providers) {
+        const url = await resolveCover();
+        if (url) {
+          setCachedCover(key, url, false);
+          return url;
         }
       }
     } catch (e) {
@@ -320,6 +865,109 @@ async function fetchCoverArt(title, artist, album) {
   }
 }
 
+function rememberResolvedCover(coverLookupKey, imageKey) {
+  if (!imageKey || imageKey === "lumina_icon") return;
+  lastCoverLookupKey = coverLookupKey;
+  lastCoverUrl = imageKey;
+}
+
+function getImmediateCoverImage(data, coverLookupKey) {
+  const cachedCover = getCachedCover(coverLookupKey);
+  if (typeof cachedCover === "string" && cachedCover) {
+    return cachedCover;
+  }
+
+  const directCover = normalizeCoverSourceUrl(data.cover);
+  if (directCover) {
+    return directCover;
+  }
+
+  if (lastCoverLookupKey === coverLookupKey && lastCoverUrl) {
+    return lastCoverUrl;
+  }
+
+  return "lumina_icon";
+}
+
+function buildDiscordActivity(data, largeImageKey) {
+  const artist = data.artist || "Unknown Artist";
+  const title = data.title || "Unknown Track";
+  const album = data.album || "Lumina Music Player";
+  const isPlaying = !!data.isPlaying;
+  const hasValidTimeline =
+    isPlaying &&
+    Number.isFinite(data.currentTime) &&
+    Number.isFinite(data.duration) &&
+    data.duration > 0 &&
+    data.currentTime >= 0 &&
+    data.currentTime < data.duration;
+
+  const activity = {
+    name: isPlaying ? "Lumina Music" : "Lumina Music Player",
+    type: isPlaying ? (ActivityType?.Listening ?? 2) : (ActivityType?.Playing ?? 0),
+    details: title,
+    state: isPlaying ? artist : `Paused - ${artist}`,
+    statusDisplayType: StatusDisplayType?.STATE ?? 1,
+    largeImageKey,
+    largeImageText: album,
+    instance: false,
+  };
+
+  if (!isPlaying) {
+    activity.smallImageKey = "paused";
+    activity.smallImageText = "Paused";
+  }
+
+  if (hasValidTimeline) {
+    const remaining = data.duration - data.currentTime;
+    if (remaining > 0) {
+      activity.startTimestamp = Date.now() - data.currentTime * 1000;
+      activity.endTimestamp = Date.now() + remaining * 1000;
+    }
+  }
+
+  return activity;
+}
+
+async function applyDiscordActivity(data, largeImageKey) {
+  if (!rpc || !rpcReady) return;
+  await rpc.user?.setActivity(buildDiscordActivity(data, largeImageKey));
+}
+
+function refreshDiscordCoverInBackground(data, coverLookupKey) {
+  const artist = data.artist || "Unknown Artist";
+  const title = data.title || "Unknown Track";
+  const album = data.album || "Lumina Music Player";
+  const cachedCover = getCachedCover(coverLookupKey);
+
+  if (!title || artist === "Unknown Artist" || cachedCover !== undefined) {
+    return;
+  }
+
+  void (async () => {
+    try {
+      const fetchedUrl = await fetchCoverArt(title, artist, album);
+      if (!fetchedUrl || !rpc || !rpcReady || !lastPresence) return;
+
+      const latestCoverLookupKey = getCoverLookupKey(
+        lastPresence.title || "",
+        lastPresence.artist || "",
+        lastPresence.album || ""
+      );
+
+      if (latestCoverLookupKey !== coverLookupKey) {
+        return;
+      }
+
+      const imageKey = normalizeCoverSourceUrl(fetchedUrl) || fetchedUrl;
+      rememberResolvedCover(coverLookupKey, imageKey);
+      await applyDiscordActivity(lastPresence, imageKey);
+    } catch (error) {
+      console.error("Error refreshing Discord cover:", error);
+    }
+  })();
+}
+
 // Update Discord Rich Presence (Spotify-like style)
 async function updateDiscordPresence(data) {
   if (!rpc || !rpcReady) return;
@@ -328,58 +976,22 @@ async function updateDiscordPresence(data) {
     const artist = data.artist || "Unknown Artist";
     const title = data.title || "Unknown Track";
     const album = data.album || "Lumina Music Player";
-    const isPlaying = !!data.isPlaying;
-    const hasValidTimeline =
-      isPlaying &&
-      Number.isFinite(data.currentTime) &&
-      Number.isFinite(data.duration) &&
-      data.duration > 0 &&
-      data.currentTime >= 0 &&
-      data.currentTime < data.duration;
-
-    const coverLookupKey = getCoverLookupKey(title, artist, album);
-    let largeImageKey = "lumina_icon";
-    if (title && artist !== "Unknown Artist") {
-      const fetchedUrl = await fetchCoverArt(title, artist, album);
-      if (fetchedUrl) {
-        largeImageKey = fetchedUrl;
-      } else if (data.cover && /^https?:\/\//i.test(data.cover)) {
-        largeImageKey = data.cover;
-      } else if (lastCoverLookupKey === coverLookupKey && lastCoverUrl) {
-        largeImageKey = lastCoverUrl;
-      }
-    }
-
-    if (largeImageKey && largeImageKey !== "lumina_icon") {
-      lastCoverLookupKey = coverLookupKey;
-      lastCoverUrl = largeImageKey;
-    }
-
-    const activity = {
-      name: isPlaying ? "Lumina Music" : "Lumina Music Player",
-      type: isPlaying ? (ActivityType?.Listening ?? 2) : (ActivityType?.Playing ?? 0),
-      details: title,
-      state: isPlaying ? artist : `Paused - ${artist}`,
-      statusDisplayType: StatusDisplayType?.STATE ?? 1,
-      largeImageKey: largeImageKey,
-      largeImageText: album,
-      instance: false,
+    const normalizedData = {
+      ...data,
+      artist,
+      title,
+      album,
     };
 
-    if (!isPlaying) {
-      activity.smallImageKey = "paused";
-      activity.smallImageText = "Paused";
-    }
+    const coverLookupKey = getCoverLookupKey(title, artist, album);
+    const largeImageKey = getImmediateCoverImage(normalizedData, coverLookupKey);
 
-    if (hasValidTimeline) {
-      const remaining = data.duration - data.currentTime;
-      if (remaining > 0) {
-        activity.startTimestamp = Date.now() - data.currentTime * 1000;
-        activity.endTimestamp = Date.now() + remaining * 1000;
-      }
-    }
+    rememberResolvedCover(coverLookupKey, largeImageKey);
+    await applyDiscordActivity(normalizedData, largeImageKey);
 
-    await rpc.user?.setActivity(activity);
+    if (largeImageKey === "lumina_icon") {
+      refreshDiscordCoverInBackground(normalizedData, coverLookupKey);
+    }
   } catch (err) {
     console.error("Error updating Discord presence:", err);
   }
@@ -479,6 +1091,7 @@ app.whenReady().then(() => {
 
 app.on("window-all-closed", () => {
   clearDiscordPresence();
+  persistCoverCache();
 
   // Clean up Discord RPC
   if (rpcHeartbeatInterval) clearInterval(rpcHeartbeatInterval);
@@ -504,6 +1117,19 @@ ipcMain.handle("update-discord-presence", (event, data) => {
   lastPresence = data; // Cache for reconnection
   updateDiscordPresence(data);
   return true;
+});
+
+ipcMain.handle("preload-discord-cover", async (event, data) => {
+  if (!data?.title || !data?.artist || data.artist === "Unknown Artist") {
+    return null;
+  }
+
+  try {
+    return await fetchCoverArt(data.title, data.artist, data.album || "Unknown Album");
+  } catch (error) {
+    console.error("Error preloading Discord cover:", error);
+    return null;
+  }
 });
 
 ipcMain.handle("clear-discord-presence", () => {

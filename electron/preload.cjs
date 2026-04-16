@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Discord Rich Presence
   updateDiscordPresence: (data) => ipcRenderer.invoke('update-discord-presence', data),
+  preloadDiscordCover: (data) => ipcRenderer.invoke('preload-discord-cover', data),
   clearDiscordPresence: () => ipcRenderer.invoke('clear-discord-presence'),
   checkLdacSupport: () => ipcRenderer.invoke('ldac-available'),
 
