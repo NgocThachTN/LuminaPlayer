@@ -2,7 +2,7 @@
 import { useRef, useEffect } from "react";
 import { SongState, PlaylistItem, SongMetadata, LyricsResult } from "../types";
 import { getLyrics } from "../../services/geminiService";
-import { extractMetadata, resolveITunesCoverUrl } from "../../services/metadataService";
+import { extractMetadata } from "../../services/metadataService";
 
 const emptyLyrics: LyricsResult = { synced: [], plain: [], isSynced: false };
 const isElectron = !!(window as any).electronAPI;
@@ -24,6 +24,7 @@ export const useAudio = (
   setIsLoading: (loading: boolean) => void
 ) => {
   const audioRef = useRef<HTMLAudioElement>(null);
+  const lastPresenceBucketRef = useRef<string>("");
 
   // Sync volume with audio element
   useEffect(() => {
@@ -306,36 +307,55 @@ export const useAudio = (
     if (!isElectron || !electronAPI?.updateDiscordPresence) return;
 
     const audio = audioRef.current;
-    
-    electronAPI.updateDiscordPresence({
+    const payload = {
       title: state.metadata.title,
       artist: state.metadata.artist,
+      album: state.metadata.album,
+      cover: state.metadata.cover,
       isPlaying: state.isPlaying,
       currentTime: audio?.currentTime || 0,
       duration: audio?.duration || state.duration,
-    });
-    
-    if (state.metadata.title && state.metadata.artist !== "Unknown Artist") {
-       resolveITunesCoverUrl(state.metadata.title, state.metadata.artist).then(url => {
-         if (url) {
-            electronAPI.updateDiscordPresence({
-              title: state.metadata.title,
-              artist: state.metadata.artist,
-              isPlaying: state.isPlaying,
-              currentTime: audio?.currentTime || 0,
-              duration: audio?.duration || state.duration,
-              cover: url
-            });
-         }
-       });
-    }
+    };
+
+    electronAPI.updateDiscordPresence(payload);
 
   }, [
     state.metadata.title,
     state.metadata.artist,
+    state.metadata.album,
+    state.metadata.cover,
     state.isPlaying,
     state.currentSongIndex,
     state.duration, // Trigger update when new song's duration is loaded
+  ]);
+
+  useEffect(() => {
+    const electronAPI = (window as any).electronAPI;
+    if (!isElectron || !electronAPI?.updateDiscordPresence) return;
+    if (state.currentSongIndex < 0 || !state.metadata.title) return;
+
+    const currentBucket = `${state.currentSongIndex}:${state.isPlaying}:${Math.floor(state.currentTime / 15)}`;
+    if (currentBucket === lastPresenceBucketRef.current) return;
+    lastPresenceBucketRef.current = currentBucket;
+
+    electronAPI.updateDiscordPresence({
+      title: state.metadata.title,
+      artist: state.metadata.artist,
+      album: state.metadata.album,
+      cover: state.metadata.cover,
+      isPlaying: state.isPlaying,
+      currentTime: state.currentTime,
+      duration: audioRef.current?.duration || state.duration,
+    });
+  }, [
+    state.currentSongIndex,
+    state.currentTime,
+    state.isPlaying,
+    state.duration,
+    state.metadata.title,
+    state.metadata.artist,
+    state.metadata.album,
+    state.metadata.cover,
   ]);
 
   // Media Session API

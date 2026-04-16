@@ -13,6 +13,8 @@ let rpc = null;
 let rpcReady = false;
 let lastPresence = null; // Cache for reconnection
 let lastCoverUrl = null; // Cache for fetched cover art URL
+let ActivityType = null;
+let StatusDisplayType = null;
 
 // Initialize Discord RPC with @xhayper/discord-rpc (ESM module)
 let rpcHeartbeatInterval = null;
@@ -20,7 +22,10 @@ let rpcHeartbeatInterval = null;
 async function initDiscordRPC() {
   try {
     // Dynamic import for ESM module
-    const { Client } = await import("@xhayper/discord-rpc");
+    const rpcModule = await import("@xhayper/discord-rpc");
+    const { Client } = rpcModule;
+    ActivityType = rpcModule.ActivityType;
+    StatusDisplayType = rpcModule.StatusDisplayType;
 
     rpc = new Client({
       clientId: DISCORD_CLIENT_ID,
@@ -35,8 +40,11 @@ async function initDiscordRPC() {
         updateDiscordPresence(lastPresence);
       } else {
         rpc.user?.setActivity({
+          name: "Lumina Music Player",
           details: "Idle",
           state: "Not playing anything",
+          type: ActivityType?.Playing,
+          statusDisplayType: StatusDisplayType?.DETAILS,
           largeImageKey: "lumina_icon",
           largeImageText: "Lumina Music Player",
         });
@@ -65,7 +73,10 @@ async function initDiscordRPC() {
             try { await rpc.destroy(); } catch (_) { }
           }
 
-          const { Client } = await import("@xhayper/discord-rpc");
+          const rpcModule = await import("@xhayper/discord-rpc");
+          const { Client } = rpcModule;
+          ActivityType = rpcModule.ActivityType;
+          StatusDisplayType = rpcModule.StatusDisplayType;
           rpc = new Client({
             clientId: DISCORD_CLIENT_ID,
           });
@@ -93,18 +104,6 @@ async function initDiscordRPC() {
   } catch (err) {
     console.error("Discord RPC initialization error:", err);
   }
-}
-
-// Format seconds to m:ss
-function formatTime(seconds) {
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${mins}:${secs.toString().padStart(2, "0")}`;
-}
-
-// Format progress as time only (clean look)
-function createProgressBar(current, total) {
-  return ""; // No text progress bar - just use time
 }
 
 // Update Discord Rich Presence (Spotify-like style)
@@ -162,49 +161,55 @@ async function updateDiscordPresence(data) {
   try {
     const artist = data.artist || "Unknown Artist";
     const title = data.title || "Unknown Track";
+    const album = data.album || "Lumina Music Player";
+    const isPlaying = !!data.isPlaying;
+    const hasValidTimeline =
+      isPlaying &&
+      Number.isFinite(data.currentTime) &&
+      Number.isFinite(data.duration) &&
+      data.duration > 0 &&
+      data.currentTime >= 0 &&
+      data.currentTime < data.duration;
 
-    // Attempt to fetch cover art dynamically
-    let largeImageKey = "lumina_icon"; // Default asset
+    let largeImageKey = "lumina_icon";
     if (title && artist !== "Unknown Artist") {
-      // Note: Check existing data.cover first in case provided by renderer
       if (data.cover && data.cover.startsWith("http")) {
-        // Already a valid URL
         largeImageKey = data.cover;
       } else {
         const fetchedUrl = await fetchCoverArt(title, artist);
-        if (fetchedUrl) largeImageKey = fetchedUrl;
+        if (fetchedUrl) {
+          largeImageKey = fetchedUrl;
+        }
       }
     }
 
-    // Cache the cover URL for heartbeat ping
     lastCoverUrl = largeImageKey;
 
-    // Activity Object
     const activity = {
+      name: isPlaying ? "Lumina Music" : "Lumina Music Player",
+      type: isPlaying ? (ActivityType?.Listening ?? 2) : (ActivityType?.Playing ?? 0),
       details: title,
-      state: `by ${artist} • ${data.isPlaying ? "Playing" : "Paused"}`,
+      state: isPlaying ? artist : `Paused - ${artist}`,
+      statusDisplayType: StatusDisplayType?.DETAILS ?? 2,
       largeImageKey: largeImageKey,
-      largeImageText: data.album || "Lumina Music Player",
-      // If we use a URL for the Large Image, we should ideally use a URL for the Small Image too 
-      // or Discord might fail to render the small asset key over the large web image.
-      // For now, let's trust the text status restoration is the main fix.
-      smallImageKey: data.isPlaying ? "playing" : "paused",
-      smallImageText: data.isPlaying ? "Playing" : "Paused",
+      largeImageText: album,
       instance: false,
     };
 
-    // Add timestamps? (Optional, makes it look better)
-    if (data.isPlaying && data.duration) {
-      // Calculate end time
-      // data.currentTime is where we are NOW.
-      // So endTimestamp = Date.now() + (remaining * 1000)
+    if (!isPlaying) {
+      activity.smallImageKey = "paused";
+      activity.smallImageText = "Paused";
+    }
+
+    if (hasValidTimeline) {
       const remaining = data.duration - data.currentTime;
       if (remaining > 0) {
+        activity.startTimestamp = Date.now() - data.currentTime * 1000;
         activity.endTimestamp = Date.now() + remaining * 1000;
       }
     }
 
-    rpc.user?.setActivity(activity);
+    await rpc.user?.setActivity(activity);
   } catch (err) {
     console.error("Error updating Discord presence:", err);
   }
@@ -715,3 +720,4 @@ ipcMain.handle("extract-metadata", async (event, filePath) => {
     };
   }
 });
+
