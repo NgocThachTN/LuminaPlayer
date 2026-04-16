@@ -190,7 +190,7 @@ async function updateDiscordPresence(data) {
       type: isPlaying ? (ActivityType?.Listening ?? 2) : (ActivityType?.Playing ?? 0),
       details: title,
       state: isPlaying ? artist : `Paused - ${artist}`,
-      statusDisplayType: StatusDisplayType?.DETAILS ?? 2,
+      statusDisplayType: StatusDisplayType?.STATE ?? 1,
       largeImageKey: largeImageKey,
       largeImageText: album,
       instance: false,
