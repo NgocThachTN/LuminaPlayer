@@ -13,6 +13,7 @@ let rpc = null;
 let rpcReady = false;
 let lastPresence = null; // Cache for reconnection
 let lastCoverUrl = null; // Cache for fetched cover art URL
+let lastCoverLookupKey = null;
 let ActivityType = null;
 let StatusDisplayType = null;
 
@@ -125,33 +126,198 @@ function getCoverHash(filePath) {
   }
 }
 
-// Cache for cover art to avoid redundant API calls (Runtime memory cache for iTunes/Discord)
+// Cache for cover art to avoid redundant API calls (Runtime memory cache for Apple Music/Discord)
 const coverCache = new Map();
+const coverFetchInFlight = new Map();
+const COVER_CACHE_HIT_TTL_MS = 1000 * 60 * 60 * 12;
+const COVER_CACHE_MISS_TTL_MS = 1000 * 60 * 10;
 
-// Helper: Fetch Cover Art from iTunes
-async function fetchCoverArt(title, artist) {
-  const key = `${title}-${artist}`;
-  if (coverCache.has(key)) return coverCache.get(key);
+function normalizeCoverQueryPart(value) {
+  return String(value || "")
+    .normalize("NFKC")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+function getCoverLookupKey(title, artist, album) {
+  return [
+    normalizeCoverQueryPart(artist),
+    normalizeCoverQueryPart(album),
+    normalizeCoverQueryPart(title),
+  ].join("|");
+}
+
+function getCachedCover(key) {
+  const entry = coverCache.get(key);
+  if (!entry) return undefined;
+
+  if (entry.expiresAt <= Date.now()) {
+    coverCache.delete(key);
+    return undefined;
+  }
+
+  return entry.url;
+}
+
+function setCachedCover(key, url, isMiss = false) {
+  coverCache.set(key, {
+    url,
+    expiresAt: Date.now() + (isMiss ? COVER_CACHE_MISS_TTL_MS : COVER_CACHE_HIT_TTL_MS),
+  });
+
+  if (coverCache.size > 100) {
+    const firstKey = coverCache.keys().next().value;
+    coverCache.delete(firstKey);
+  }
+}
+
+function stripAppleSearchNoise(value) {
+  return String(value || "")
+    .normalize("NFKC")
+    .replace(/\u00A0/g, " ")
+    .replace(/\s*[\(\[\{].*?[\)\]\}]\s*/g, " ")
+    .replace(/\b(feat\.?|ft\.?|with)\b.*$/i, " ")
+    .replace(/\s*[-:]\s*(single|ep|album|deluxe edition|special edition|collector'?s edition|remaster(?:ed)?|version|mono|stereo|explicit|clean)\b.*$/i, " ")
+    .replace(/[\/\\|]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function containsJapanese(text) {
+  return /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]/.test(String(text || ""));
+}
+
+function buildAppleMusicQueries(title, artist, album) {
+  const raw = {
+    title: String(title || "").trim(),
+    artist: String(artist || "").trim(),
+    album: String(album || "").trim(),
+  };
+  const clean = {
+    title: stripAppleSearchNoise(raw.title),
+    artist: stripAppleSearchNoise(raw.artist),
+    album: stripAppleSearchNoise(raw.album),
+  };
+
+  return [
+    [raw.artist, raw.title],
+    [clean.artist, clean.title],
+    [raw.artist, raw.album, raw.title],
+    [clean.artist, clean.album, clean.title],
+    [clean.artist, clean.album],
+    [raw.artist, raw.album],
+    [clean.album, clean.artist],
+    [clean.title],
+    [raw.title],
+  ]
+    .map((parts) => parts.filter(Boolean).join(" ").trim())
+    .filter(Boolean)
+    .filter((query, index, arr) => arr.indexOf(query) === index);
+}
+
+function getAppleStorefronts(title, artist, album) {
+  const combined = `${title || ""} ${artist || ""} ${album || ""}`;
+  const storefronts = [undefined, "US"];
+
+  if (containsJapanese(combined)) {
+    storefronts.splice(1, 0, "JP");
+  }
+
+  return storefronts;
+}
+
+async function searchAppleMusicArtwork(term, entity, country) {
+  const params = new URLSearchParams({
+    term,
+    media: "music",
+    entity,
+    limit: "5",
+  });
+
+  if (country) {
+    params.set("country", country);
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
 
   try {
-    const query = encodeURIComponent(`${artist} ${title}`);
-    const response = await fetch(`https://itunes.apple.com/search?term=${query}&media=music&limit=1`);
-    const data = await response.json();
+    const response = await fetch(`https://itunes.apple.com/search?${params.toString()}`, {
+      signal: controller.signal,
+      headers: {
+        "Accept": "application/json",
+        "Accept-Language": "ja,en-US;q=0.9,en;q=0.8",
+        "User-Agent": "LuminaPlayer/2.1 DiscordRPC",
+      },
+    });
 
-    if (data.resultCount > 0 && data.results[0].artworkUrl100) {
-      const url = data.results[0].artworkUrl100.replace('100x100bb', '600x600bb');
-      coverCache.set(key, url);
-      // Limit cache size
-      if (coverCache.size > 50) {
-        const firstKey = coverCache.keys().next().value;
-        coverCache.delete(firstKey);
-      }
-      return url;
+    if (!response.ok) {
+      throw new Error(`Apple Music search failed: ${response.status}`);
     }
-  } catch (e) {
-    console.error("Cover Fetch Error:", e);
+
+    const data = await response.json();
+    if (!data?.resultCount || !Array.isArray(data.results)) {
+      return null;
+    }
+
+    for (const result of data.results) {
+      if (result?.artworkUrl100) {
+        return result.artworkUrl100.replace(/100x100bb/g, "600x600bb");
+      }
+    }
+  } finally {
+    clearTimeout(timeout);
   }
+
   return null;
+}
+
+// Helper: Fetch cover art from Apple Music/iTunes with multiple search passes.
+async function fetchCoverArt(title, artist, album) {
+  const key = getCoverLookupKey(title, artist, album);
+  const cachedUrl = getCachedCover(key);
+  if (cachedUrl !== undefined) return cachedUrl;
+
+  if (coverFetchInFlight.has(key)) {
+    return coverFetchInFlight.get(key);
+  }
+
+  const request = (async () => {
+    try {
+      const queries = buildAppleMusicQueries(title, artist, album);
+      const storefronts = getAppleStorefronts(title, artist, album);
+
+      for (const query of queries) {
+        for (const entity of ["song", "album"]) {
+          for (const country of storefronts) {
+            try {
+              const url = await searchAppleMusicArtwork(query, entity, country);
+              if (url) {
+                setCachedCover(key, url, false);
+                return url;
+              }
+            } catch (error) {
+              console.error(`Cover Fetch Error (${query}${country ? `/${country}` : ""}/${entity}):`, error.message);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.error("Cover Fetch Error:", e);
+    }
+
+    setCachedCover(key, null, true);
+    return null;
+  })();
+
+  coverFetchInFlight.set(key, request);
+
+  try {
+    return await request;
+  } finally {
+    coverFetchInFlight.delete(key);
+  }
 }
 
 // Update Discord Rich Presence (Spotify-like style)
@@ -171,19 +337,23 @@ async function updateDiscordPresence(data) {
       data.currentTime >= 0 &&
       data.currentTime < data.duration;
 
+    const coverLookupKey = getCoverLookupKey(title, artist, album);
     let largeImageKey = "lumina_icon";
     if (title && artist !== "Unknown Artist") {
-      if (data.cover && data.cover.startsWith("http")) {
+      const fetchedUrl = await fetchCoverArt(title, artist, album);
+      if (fetchedUrl) {
+        largeImageKey = fetchedUrl;
+      } else if (data.cover && /^https?:\/\//i.test(data.cover)) {
         largeImageKey = data.cover;
-      } else {
-        const fetchedUrl = await fetchCoverArt(title, artist);
-        if (fetchedUrl) {
-          largeImageKey = fetchedUrl;
-        }
+      } else if (lastCoverLookupKey === coverLookupKey && lastCoverUrl) {
+        largeImageKey = lastCoverUrl;
       }
     }
 
-    lastCoverUrl = largeImageKey;
+    if (largeImageKey && largeImageKey !== "lumina_icon") {
+      lastCoverLookupKey = coverLookupKey;
+      lastCoverUrl = largeImageKey;
+    }
 
     const activity = {
       name: isPlaying ? "Lumina Music" : "Lumina Music Player",
@@ -219,6 +389,7 @@ async function updateDiscordPresence(data) {
 function clearDiscordPresence() {
   lastPresence = null;
   lastCoverUrl = null;
+  lastCoverLookupKey = null;
   if (rpc && rpcReady) {
     try {
       rpc.user?.clearActivity();
