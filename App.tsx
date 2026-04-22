@@ -26,9 +26,11 @@ const App: React.FC = () => {
     artists, 
     metadataLoaded, 
     hasCheckedSaved, 
+    isRefreshingLibrary,
     handleFileChange, 
     handleFolderChange, 
     handleElectronFolderSelect, 
+    refreshElectronFolder,
     handleElectronFileSelect,
     loadAllMetadata,
     toTitleCase
@@ -189,6 +191,8 @@ const App: React.FC = () => {
             toTitleCase={toTitleCase}
             isElectron={isElectron}
             handleElectronFolderSelect={handleElectronFolderSelect}
+            refreshElectronFolder={refreshElectronFolder}
+            isRefreshingLibrary={isRefreshingLibrary}
             handleFolderChange={handleFolderChange}
             handleElectronFileSelect={handleElectronFileSelect}
             handleFileChange={handleFileChange}

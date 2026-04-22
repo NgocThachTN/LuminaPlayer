@@ -1598,6 +1598,32 @@ function saveConfig(config) {
   }
 }
 
+const audioExtensions = [
+  ".mp3",
+  ".wav",
+  ".ogg",
+  ".flac",
+  ".m4a",
+  ".aac",
+  ".wma",
+];
+
+function readAudioFilesFromFolder(folderPath) {
+  try {
+    const files = fs.readdirSync(folderPath);
+    return files
+      .filter((file) => {
+        const ext = path.extname(file).toLowerCase();
+        return audioExtensions.includes(ext);
+      })
+      .map((file) => path.join(folderPath, file))
+      .sort();
+  } catch (e) {
+    console.error("Error reading folder:", e);
+    return [];
+  }
+}
+
 let mainWindow;
 
 // Electron performance optimizations for Windows
@@ -1923,31 +1949,37 @@ ipcMain.handle("open-folder-dialog", async () => {
   }
 
   const folderPath = result.filePaths[0];
-  const audioExtensions = [
-    ".mp3",
-    ".wav",
-    ".ogg",
-    ".flac",
-    ".m4a",
-    ".aac",
-    ".wma",
-  ];
+  const audioFiles = readAudioFilesFromFolder(folderPath);
 
-  try {
-    const files = fs.readdirSync(folderPath);
-    const audioFiles = files
-      .filter((file) => {
-        const ext = path.extname(file).toLowerCase();
-        return audioExtensions.includes(ext);
-      })
-      .map((file) => path.join(folderPath, file))
-      .sort();
+  const config = getConfig();
+  config.musicFolderPath = folderPath;
+  saveConfig(config);
 
-    return audioFiles;
-  } catch (e) {
-    console.error("Error reading folder:", e);
+  return audioFiles;
+});
+
+ipcMain.handle("refresh-music-folder", async () => {
+  const config = getConfig();
+  let folderPath = config.musicFolderPath;
+
+  if (!folderPath && Array.isArray(config.playlist) && config.playlist.length > 0) {
+    const firstItem = config.playlist.find((item) =>
+      typeof item === "string" ? item : item?.path
+    );
+    const firstPath = typeof firstItem === "string" ? firstItem : firstItem?.path;
+    if (firstPath) {
+      folderPath = path.dirname(firstPath);
+    }
+  }
+
+  if (!folderPath || !fs.existsSync(folderPath)) {
     return [];
   }
+
+  config.musicFolderPath = folderPath;
+  saveConfig(config);
+
+  return readAudioFilesFromFolder(folderPath);
 });
 
 // Open file dialog and return audio file paths

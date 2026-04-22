@@ -23,6 +23,7 @@ interface ElectronAPI {
 
   // Dialog operations
   openFolderDialog: () => Promise<string[]>;
+  refreshMusicFolder: () => Promise<string[]>;
   openFileDialog: () => Promise<string[]>;
   
   // Metadata

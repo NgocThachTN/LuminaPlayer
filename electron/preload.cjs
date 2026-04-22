@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Dialog operations
   openFolderDialog: () => ipcRenderer.invoke('open-folder-dialog'),
+  refreshMusicFolder: () => ipcRenderer.invoke('refresh-music-folder'),
   openFileDialog: () => ipcRenderer.invoke('open-file-dialog'),
 
   // Metadata

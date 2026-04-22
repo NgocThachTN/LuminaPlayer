@@ -21,6 +21,7 @@ export const useLibrary = (
   const [playlistItems, setPlaylistItems] = useState<PlaylistItem[]>([]);
   const [metadataLoaded, setMetadataLoaded] = useState(false);
   const [hasCheckedSaved, setHasCheckedSaved] = useState(false);
+  const [isRefreshingLibrary, setIsRefreshingLibrary] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   // Helper to normalize text to Title Case
@@ -370,6 +371,51 @@ export const useLibrary = (
     loadAllMetadata(items);
   };
 
+  const refreshElectronFolder = async () => {
+    const electronAPI = (window as any).electronAPI;
+    if (!isElectron || !electronAPI?.refreshMusicFolder || isRefreshingLibrary) return;
+
+    setIsRefreshingLibrary(true);
+
+    try {
+      const filePaths = await electronAPI.refreshMusicFolder();
+      if (!filePaths || filePaths.length === 0) return;
+
+      const previousByPath = new Map(
+        playlistItems
+          .filter((item) => item.path)
+          .map((item) => [item.path, item])
+      );
+      const currentPath = state.currentSongIndex >= 0
+        ? playlistItems[state.currentSongIndex]?.path
+        : "";
+
+      const items: PlaylistItem[] = filePaths.map((p: string) => {
+        const previousItem = previousByPath.get(p);
+        return {
+          path: p,
+          name: previousItem?.name || p.split(/[/\\]/).pop() || p,
+          metadata: previousItem?.metadata,
+        };
+      });
+      const nextCurrentIndex = currentPath
+        ? items.findIndex((item) => item.path === currentPath)
+        : state.currentSongIndex;
+
+      setPlaylistItems(items);
+      setState((prev) => ({
+        ...prev,
+        playlist: [],
+        currentSongIndex: nextCurrentIndex >= 0 ? nextCurrentIndex : -1,
+      }));
+
+      await electronAPI.savePlaylist(items);
+      loadAllMetadata(items);
+    } finally {
+      setIsRefreshingLibrary(false);
+    }
+  };
+
   // Electron: Open file using native dialog
   const handleElectronFileSelect = async () => {
     const electronAPI = (window as any).electronAPI;
@@ -407,9 +453,11 @@ export const useLibrary = (
     artists,
     metadataLoaded,
     hasCheckedSaved,
+    isRefreshingLibrary,
     handleFileChange,
     handleFolderChange,
     handleElectronFolderSelect,
+    refreshElectronFolder,
     handleElectronFileSelect,
     loadAllMetadata,
     toTitleCase
