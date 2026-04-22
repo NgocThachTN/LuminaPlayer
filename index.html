@@ -47,7 +47,10 @@
         /* Enhanced Lyrics Styling - Apple Music Style (Performance Optimized) */
         .lyric-item {
             position: relative;
-            transition: transform 760ms cubic-bezier(0.16, 1, 0.3, 1), opacity 680ms ease-out;
+            transition-property: transform, opacity, color, text-shadow;
+            transition-duration: 760ms, 680ms, 260ms, 260ms;
+            transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1), ease-out, ease-out, ease-out;
+            transition-delay: 0ms, 0ms, 0ms, 0ms;
             opacity: 0.45;
             padding: 1rem 2rem;
             margin: 0.5rem 0;
@@ -75,6 +78,14 @@
             color: #ffffff;
             text-shadow: 0 0 12px rgba(255, 255, 255, 0.28);
             will-change: transform, opacity;
+        }
+        .lyric-item.lyric-light-in {
+            transition-duration: 760ms, 680ms, 440ms, 540ms;
+            transition-delay: 0ms, 0ms, 180ms, 220ms;
+        }
+        .lyric-item.lyric-just-passed {
+            transition-duration: 620ms, 420ms, 180ms, 180ms;
+            transition-delay: 0ms, 0ms, 0ms, 0ms;
         }
         .lyric-item.active-lyric::before {
             display: none;

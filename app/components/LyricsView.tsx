@@ -71,7 +71,7 @@ const getLyricVisualState = (
     color = lyricsColors.active;
     textShadow = '0 0 14px rgba(255,255,255,0.28)';
   } else if (distance === -1) {
-    opacityClass = "opacity-0";
+    opacityClass = "opacity-0 lyric-just-passed";
     scaleClass = "scale-95";
   } else if (distance > 0 && distance <= 4) {
     if (distance === 1) {
@@ -92,7 +92,7 @@ const getLyricVisualState = (
   }
 
   return {
-    className: `${isActive ? "active-lyric" : ""} ${opacityClass} ${scaleClass} ${pointerEvents}`,
+    className: `${isActive ? "active-lyric lyric-light-in" : ""} ${opacityClass} ${scaleClass} ${pointerEvents}`,
     color,
     textShadow,
   };
