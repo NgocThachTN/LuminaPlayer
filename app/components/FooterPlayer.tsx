@@ -31,6 +31,12 @@ export const FooterPlayer: React.FC<FooterPlayerProps> = ({
   volume,
   setVolume
 }) => {
+  const adjustVolume = React.useCallback((delta: number) => {
+    const newVolume = Math.min(1, Math.max(0, volume + delta));
+    setVolume(newVolume);
+    if (audioRef.current) audioRef.current.volume = newVolume;
+  }, [audioRef, setVolume, volume]);
+
   return (
     <footer 
       onClick={(e) => {
@@ -166,7 +172,16 @@ export const FooterPlayer: React.FC<FooterPlayerProps> = ({
           )}
           
           {/* Volume Control */}
-          <div className="flex items-center gap-2 group" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="flex items-center gap-2 group"
+            onClick={(e) => e.stopPropagation()}
+            onWheel={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              adjustVolume(e.deltaY < 0 ? 0.05 : -0.05);
+            }}
+            title="Scroll to adjust volume"
+          >
             <svg className="w-4 h-4 text-white/40 group-hover:text-white/80 transition-colors" fill="currentColor" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" /></svg>
             <input
               type="range"
@@ -176,8 +191,7 @@ export const FooterPlayer: React.FC<FooterPlayerProps> = ({
               value={volume}
               onChange={(e) => {
                 const newVolume = Number(e.target.value);
-                setVolume(newVolume);
-                if (audioRef.current) audioRef.current.volume = newVolume;
+                adjustVolume(newVolume - volume);
               }}
               className="w-20 md:w-24 accent-white h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
             />
