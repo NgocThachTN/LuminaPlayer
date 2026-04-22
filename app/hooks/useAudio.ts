@@ -185,8 +185,7 @@ export const useAudio = (
         const lyrics = await getLyrics(
           finalTitle,
           finalArtist,
-          finalMetadata.album || metadataAlbum,
-          finalMetadata.duration
+          finalMetadata.album || metadataAlbum
         );
         setState((prev) => {
           if (prev.currentSongIndex === index) {

@@ -14,7 +14,6 @@ export interface SongMetadata {
   artist: string;
   album?: string;
   cover?: string;
-  duration?: number;
   year?: number;
 }
 

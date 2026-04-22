@@ -28,7 +28,7 @@ interface ElectronAPI {
   // Metadata
   getFileInfo: (filePath: string) => Promise<{ title: string; artist: string; name: string; size?: number }>;
   extractMetadata: (filePath: string) => Promise<{ title: string; artist: string; album: string; cover?: string; duration?: number }>;
-  fetchYouTubeMusicLyrics: (title: string, artist: string, album?: string, duration?: number) => Promise<{ lyrics: string; synced?: { time: number; text: string }[]; videoId?: string; title?: string; artist?: string } | null>;
+  fetchYouTubeMusicLyrics: (title: string, artist: string, album?: string) => Promise<{ lyrics: string; synced?: { time: number; text: string }[]; videoId?: string; title?: string; artist?: string } | null>;
   
   // Discord Rich Presence
   updateDiscordPresence: (data: DiscordPresenceData) => Promise<boolean>;

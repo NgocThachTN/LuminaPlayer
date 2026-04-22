@@ -388,10 +388,23 @@ function stripJapaneseDecorations(value) {
     .trim();
 }
 
+function getYouTubeMusicArtistAliases(artist) {
+  const normalized = normalizeLyricsComparable(artist).replace(/\s+/g, "");
+  const aliases = [];
+
+  if (normalized.includes("hinatazaka46")) aliases.push("日向坂46");
+  if (normalized.includes("sakurazaka46")) aliases.push("櫻坂46", "欅坂46");
+  if (normalized.includes("keyakizaka46")) aliases.push("欅坂46");
+  if (normalized.includes("nogizaka46")) aliases.push("乃木坂46");
+
+  return aliases.filter((alias, index) => aliases.indexOf(alias) === index);
+}
+
 function buildYouTubeMusicLyricsQueries(title, artist, album = "") {
   const rawTitle = String(title || "").trim();
   const rawArtist = String(artist || "").trim();
   const rawAlbum = String(album || "").trim();
+  const artistAliases = getYouTubeMusicArtistAliases(rawArtist);
   const japaneseTitle = stripJapaneseDecorations(rawTitle);
   const titleTokens = getLatinTokens(rawTitle);
   const hasNonLatinTitle = !!getNonLatinCompact(rawTitle);
@@ -400,6 +413,11 @@ function buildYouTubeMusicLyricsQueries(title, artist, album = "") {
     rawArtist && rawTitle ? `${rawArtist} ${rawTitle}` : rawTitle,
     rawArtist && rawAlbum && rawTitle ? `${rawArtist} ${rawAlbum} ${rawTitle}` : "",
     rawAlbum && rawTitle ? `${rawAlbum} ${rawTitle}` : "",
+    ...artistAliases.flatMap((alias) => [
+      rawTitle ? `${alias} ${rawTitle}` : "",
+      rawAlbum && rawTitle ? `${alias} ${rawAlbum} ${rawTitle}` : "",
+      japaneseTitle && japaneseTitle !== rawTitle ? `${alias} ${japaneseTitle}` : "",
+    ]),
     rawArtist && japaneseTitle && japaneseTitle !== rawTitle ? `${rawArtist} ${japaneseTitle}` : "",
     rawArtist && titleTokens.length ? `${rawArtist} ${titleTokens.join(" ")}` : "",
     rawArtist && compactTitle && compactTitle !== normalizeLyricsComparable(rawTitle) ? `${rawArtist} ${compactTitle}` : "",
@@ -750,26 +768,6 @@ function getYouTubeMusicRendererVideoId(renderer) {
   );
 }
 
-function parseYouTubeMusicDurationText(value) {
-  const text = String(value || "").trim();
-  if (!/^\d{1,2}(?::\d{2}){1,2}$/.test(text)) return null;
-
-  const parts = text.split(":").map((part) => Number(part));
-  if (parts.some((part) => !Number.isFinite(part))) return null;
-  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
-  return parts[0] * 60 + parts[1];
-}
-
-function getYouTubeMusicRendererDuration(renderer, subtitleSegments = []) {
-  const fixedColumnText = getRunsText(
-    renderer?.fixedColumns?.[0]?.musicResponsiveListItemFixedColumnRenderer?.text?.runs
-  );
-  return (
-    parseYouTubeMusicDurationText(fixedColumnText) ??
-    parseYouTubeMusicDurationText(subtitleSegments[subtitleSegments.length - 1])
-  );
-}
-
 function buildYouTubeMusicSongCandidate(renderer) {
   const title = getRunsText(
     renderer?.flexColumns?.[0]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs
@@ -780,14 +778,13 @@ function buildYouTubeMusicSongCandidate(renderer) {
   const type = normalizeCoverQueryPart(subtitleSegments[0]);
   const artist = subtitleSegments[1] || "";
   const album = type === "song" ? subtitleSegments[2] || "" : "";
-  const duration = getYouTubeMusicRendererDuration(renderer, subtitleSegments);
   const videoId = getYouTubeMusicRendererVideoId(renderer);
 
   if (!title || !videoId || (type !== "song" && type !== "video")) {
     return null;
   }
 
-  return { type, title, artist, album, duration, videoId };
+  return { type, title, artist, album, videoId };
 }
 
 function collectYouTubeMusicSongCandidates(node, results = []) {
@@ -873,7 +870,7 @@ function isLikelyYouTubeMusicSongMatch(result, title, artist) {
   );
 }
 
-function scoreYouTubeMusicSongCandidate(result, title, artist, album = "", duration) {
+function scoreYouTubeMusicSongCandidate(result, title, artist, album = "") {
   const wantedTitle = normalizeLyricsComparable(title);
   const resultTitle = normalizeLyricsComparable(result?.title);
   const wantedAlbum = normalizeLyricsComparable(album);
@@ -887,6 +884,12 @@ function scoreYouTubeMusicSongCandidate(result, title, artist, album = "", durat
   if (wantedTitle && resultTitle === wantedTitle) score += 80;
   else if (titleCompact && resultCompact === titleCompact) score += 70;
   else if (resultTitle.includes(wantedTitle) || wantedTitle.includes(resultTitle)) score += 35;
+  if (
+    /\b(?:off\s*vocal|instrumental|karaoke)\b/.test(resultTitle) &&
+    !/\b(?:off\s*vocal|instrumental|karaoke)\b/.test(wantedTitle)
+  ) {
+    score -= 45;
+  }
 
   if (textMatchesLoosely(artist, result?.artist)) score += 30;
   if (
@@ -895,14 +898,6 @@ function scoreYouTubeMusicSongCandidate(result, title, artist, album = "", durat
     (resultAlbum.includes(wantedAlbum) || wantedAlbum.includes(resultAlbum))
   ) {
     score += 25;
-  }
-
-  if (Number.isFinite(duration) && duration > 0 && Number.isFinite(result?.duration)) {
-    const delta = Math.abs(Number(duration) - Number(result.duration));
-    if (delta <= 2) score += 70;
-    else if (delta <= 5) score += 45;
-    else if (delta <= 10) score += 20;
-    else if (delta >= 25) score -= 35;
   }
 
   return score;
@@ -1173,7 +1168,7 @@ async function fetchYouTubeMusicLyricsForVideo(videoId, forceRefresh = false) {
   }
 }
 
-async function fetchLyricsFromYouTubeMusic(title, artist, album = "", duration) {
+async function fetchLyricsFromYouTubeMusic(title, artist, album = "") {
   const attempts = buildYouTubeMusicLyricsQueries(title, artist, album);
   let plainFallback = null;
 
@@ -1184,8 +1179,8 @@ async function fetchLyricsFromYouTubeMusic(title, artist, album = "", duration) 
         .filter((candidate) => isLikelyYouTubeMusicSongMatch(candidate, title, artist))
         .sort(
           (a, b) =>
-            scoreYouTubeMusicSongCandidate(b, title, artist, album, duration) -
-            scoreYouTubeMusicSongCandidate(a, title, artist, album, duration)
+            scoreYouTubeMusicSongCandidate(b, title, artist, album) -
+            scoreYouTubeMusicSongCandidate(a, title, artist, album)
         );
 
       for (const candidate of matchedCandidates.slice(0, 5)) {
@@ -1725,11 +1720,11 @@ ipcMain.handle("has-api-key", () => {
   return !!config.apiKey;
 });
 
-ipcMain.handle("fetch-youtube-music-lyrics", async (event, { title, artist, album, duration }) => {
+ipcMain.handle("fetch-youtube-music-lyrics", async (event, { title, artist, album }) => {
   if (!title || !artist) return null;
 
   try {
-    return await fetchLyricsFromYouTubeMusic(title, artist, album || "", Number(duration));
+    return await fetchLyricsFromYouTubeMusic(title, artist, album || "");
   } catch (error) {
     console.warn("YouTube Music lyrics lookup failed:", error?.message || error);
     return null;
