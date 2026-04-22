@@ -13,6 +13,9 @@ interface PlayerOverlayProps {
   setIsFullScreenPlayer: (v: boolean) => void;
   showLyrics: boolean;
   setShowLyrics: (v: boolean) => void;
+  openLyricsFullscreen: () => void;
+  exitLyricsFullscreen: () => void;
+  isDocumentFullscreen: boolean;
   showVolumePopup: boolean;
   setShowVolumePopup: (v: boolean) => void;
   volume: number;
@@ -68,7 +71,7 @@ const buildAmbientPalette = (dominantColor: string, coverPalette: string[]): Amb
   return { base, primary, secondary, accent, glow, shadow };
 };
 
-export const PlayerOverlay: React.FC<PlayerOverlayProps> = ({
+const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
   state,
   audioInfo,
   dominantColor,
@@ -77,6 +80,9 @@ export const PlayerOverlay: React.FC<PlayerOverlayProps> = ({
   setIsFullScreenPlayer,
   showLyrics,
   setShowLyrics,
+  openLyricsFullscreen,
+  exitLyricsFullscreen,
+  isDocumentFullscreen,
   showVolumePopup,
   setShowVolumePopup,
   volume,
@@ -409,8 +415,19 @@ export const PlayerOverlay: React.FC<PlayerOverlayProps> = ({
               </button>
             </div>
 
-            {/* Lyrics/Queue Button */}
-            <div className="flex-none">
+            {/* Lyrics/Fullscreen Buttons */}
+            <div className="flex-none flex items-center gap-2">
+                <button
+                  onClick={isDocumentFullscreen ? exitLyricsFullscreen : openLyricsFullscreen}
+                  className="transition-all duration-200 p-2 rounded-lg text-white/50 hover:text-white hover:bg-white/10"
+                  title={isDocumentFullscreen ? "Exit Fullscreen" : "Fullscreen Lyrics"}
+                >
+                  {isDocumentFullscreen ? (
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M7 7H3V5h6v6H7V7zm10 0v4h-2V5h6v2h-4zM7 17v-4h2v6H3v-2h4zm10 0h4v2h-6v-6h2v4z"/></svg>
+                  ) : (
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M5 5h6V3H3v8h2V5zm8-2v2h6v6h2V3h-8zM5 13H3v8h8v-2H5v-6zm14 6h-6v2h8v-8h-2v6z"/></svg>
+                  )}
+                </button>
                 <button 
                   onClick={() => setShowLyrics(!showLyrics)}
                   className={`transition-all duration-200 p-2 rounded-lg ${showLyrics ? 'text-white bg-white/10' : 'text-white/50 hover:text-white'}`}
@@ -448,3 +465,5 @@ export const PlayerOverlay: React.FC<PlayerOverlayProps> = ({
     </>
   );
 };
+
+export const PlayerOverlay = React.memo(PlayerOverlayBase);

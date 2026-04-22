@@ -1,5 +1,5 @@
 
-import React, { useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { ApiKeyModal } from './components/ApiKeyModal';
 import { usePlayer } from './app/hooks/usePlayer';
 import { useLibrary } from './app/hooks/useLibrary';
@@ -106,6 +106,39 @@ const App: React.FC = () => {
   
   // 5. UI State
   const uiHook = useUI(state.metadata);
+  const [isDocumentFullscreen, setIsDocumentFullscreen] = useState(false);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsDocumentFullscreen(!!document.fullscreenElement);
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    handleFullscreenChange();
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
+  }, []);
+
+  const openLyricsFullscreen = useCallback(() => {
+    uiHook.setIsFullScreenPlayer(true);
+    uiHook.setShowLyrics(true);
+
+    if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+      document.documentElement.requestFullscreen().catch(() => {
+        // Some browsers may block fullscreen outside trusted app windows.
+      });
+    }
+  }, [uiHook.setIsFullScreenPlayer, uiHook.setShowLyrics]);
+
+  const exitLyricsFullscreen = useCallback(() => {
+    if (document.fullscreenElement && document.exitFullscreen) {
+      document.exitFullscreen().catch(() => {
+        // Ignore fullscreen exit failures from browser policy.
+      });
+    }
+  }, []);
 
   return (
     <div 
@@ -146,6 +179,9 @@ const App: React.FC = () => {
             setIsFullScreenPlayer={uiHook.setIsFullScreenPlayer}
             showLyrics={uiHook.showLyrics}
             setShowLyrics={uiHook.setShowLyrics}
+            openLyricsFullscreen={openLyricsFullscreen}
+            exitLyricsFullscreen={exitLyricsFullscreen}
+            isDocumentFullscreen={isDocumentFullscreen}
             showVolumePopup={uiHook.showVolumePopup}
             setShowVolumePopup={uiHook.setShowVolumePopup}
             volume={volume}
@@ -213,6 +249,9 @@ const App: React.FC = () => {
          playlistCount={queue.length} // Show Queue count now
          isFullScreenPlayer={uiHook.isFullScreenPlayer}
          setIsFullScreenPlayer={uiHook.setIsFullScreenPlayer}
+         openLyricsFullscreen={openLyricsFullscreen}
+         exitLyricsFullscreen={exitLyricsFullscreen}
+         isDocumentFullscreen={isDocumentFullscreen}
          playPrevious={audioHook.playPrevious}
          playNext={audioHook.playNext}
          togglePlay={audioHook.togglePlay}

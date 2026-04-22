@@ -8,6 +8,9 @@ interface FooterPlayerProps {
   playlistCount: number;
   isFullScreenPlayer: boolean;
   setIsFullScreenPlayer: (v: boolean) => void;
+  openLyricsFullscreen: () => void;
+  exitLyricsFullscreen: () => void;
+  isDocumentFullscreen: boolean;
   playPrevious: () => void;
   playNext: () => void;
   togglePlay: () => void;
@@ -17,12 +20,15 @@ interface FooterPlayerProps {
   setVolume: (v: number) => void;
 }
 
-export const FooterPlayer: React.FC<FooterPlayerProps> = ({
+const FooterPlayerBase: React.FC<FooterPlayerProps> = ({
   state,
   audioInfo,
   playlistCount,
   isFullScreenPlayer,
   setIsFullScreenPlayer,
+  openLyricsFullscreen,
+  exitLyricsFullscreen,
+  isDocumentFullscreen,
   playPrevious,
   playNext,
   togglePlay,
@@ -196,8 +202,29 @@ export const FooterPlayer: React.FC<FooterPlayerProps> = ({
               className="w-20 md:w-24 accent-white h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
             />
           </div>
+
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if (isDocumentFullscreen) {
+                exitLyricsFullscreen();
+              } else {
+                openLyricsFullscreen();
+              }
+            }}
+            className="text-white/50 hover:text-white transition-colors p-2"
+            title={isDocumentFullscreen ? "Exit Fullscreen" : "Fullscreen Lyrics"}
+          >
+            {isDocumentFullscreen ? (
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M7 7H3V5h6v6H7V7zm10 0v4h-2V5h6v2h-4zM7 17v-4h2v6H3v-2h4zm10 0h4v2h-6v-6h2v4z"/></svg>
+            ) : (
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M5 5h6V3H3v8h2V5zm8-2v2h6v6h2V3h-8zM5 13H3v8h8v-2H5v-6zm14 6h-6v2h8v-8h-2v6z"/></svg>
+            )}
+          </button>
         </div>
       </div>
     </footer>
   );
 };
+
+export const FooterPlayer = React.memo(FooterPlayerBase);
