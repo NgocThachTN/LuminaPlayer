@@ -43,10 +43,12 @@
     "files": [
       "dist/**/*",
       "electron/**/*",
+      "resources/**/*",
       "native/**/*",
       ".env"
     ],
     "win": {
+      "icon": "resources/icons/lumina-icon.ico",
       "target": [
         {
           "target": "nsis",
@@ -54,8 +56,7 @@
             "x64"
           ]
         }
-      ],
-      "signAndEditExecutable": false
+      ]
     },
     "nsis": {
       "oneClick": false,

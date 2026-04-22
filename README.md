@@ -1,6 +1,26 @@
-# LuminaPlayer
+<p align="center">
+  <img src="resources/icons/lumina-icon.png" width="140" alt="LuminaPlayer app logo">
+</p>
 
-A minimalist music player with synchronized lyrics, high-res audio support, and Discord Rich Presence integration.
+<p align="center">
+  <img alt="Music App" src="https://img.shields.io/badge/Music%20App-0EA5E9?style=for-the-badge&logo=applemusic&logoColor=white">
+  <img alt="Local Library" src="https://img.shields.io/badge/Local%20Library-0284C7?style=for-the-badge&logo=files&logoColor=white">
+  <img alt="Windows" src="https://img.shields.io/badge/Windows-0078D4?style=for-the-badge&logo=windows11&logoColor=white">
+  <img alt="Electron" src="https://img.shields.io/badge/Electron-1B9AAA?style=for-the-badge&logo=electron&logoColor=white">
+  <img alt="Synced Lyrics" src="https://img.shields.io/badge/Synced%20Lyrics-38BDF8?style=for-the-badge&logo=musicbrainz&logoColor=white">
+  <img alt="Discord RPC" src="https://img.shields.io/badge/Discord%20RPC-5865F2?style=for-the-badge&logo=discord&logoColor=white">
+</p>
+
+<h1 align="center">LuminaPlayer</h1>
+
+<p align="center">
+  A minimalist local music player for Windows with synchronized lyrics, high-res audio support, and Discord Rich Presence integration.
+</p>
+
+<p align="center">
+  <strong>Local library</strong> | <strong>Synced lyrics</strong> | <strong>High-res audio</strong> | <strong>Discord Rich Presence</strong>
+</p>
+
 <img src="assets/banner.png" width="100%">
 
 Windows App:

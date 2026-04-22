@@ -2,8 +2,14 @@ const { app, BrowserWindow, ipcMain, dialog, shell } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
+const APP_ID = "com.lumina.musicplayer";
+const APP_ICON_PATH = path.join(__dirname, "../resources/icons/lumina-icon.png");
 // Discord RPC is dynamically imported as ESM in initDiscordRPC()
 require("dotenv").config({ path: path.join(__dirname, "../.env") });
+
+if (process.platform === "win32") {
+  app.setAppUserModelId(APP_ID);
+}
 
 // Discord Rich Presence Configuration
 // Create your app at: https://discord.com/developers/applications
@@ -1643,6 +1649,7 @@ function createWindow() {
     minWidth: 900,
     minHeight: 600,
     backgroundColor: "#000000",
+    icon: APP_ICON_PATH,
     show: false, // Don't show until ready
     webPreferences: {
       nodeIntegration: false,
