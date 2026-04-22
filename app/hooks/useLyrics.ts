@@ -51,9 +51,9 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
   // Track if we're in the process of seeking (to handle fast seeks)
   const isSeekingRef = useRef(false);
 
-  // Easing function for smooth premium feel (Ease Out Cubic)
-  const easeOutCubic = (t: number): number => {
-    return 1 - Math.pow(1 - t, 3);
+  // Smooth Apple Music-like scroll: gentle start, soft settle.
+  const easeInOutCubic = (t: number): number => {
+    return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
   };
 
   const cancelPendingScroll = useCallback(() => {
@@ -105,7 +105,7 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
            const startY = currentScroll;
            const change = targetScroll - startY;
            const startTime = performance.now();
-           const duration = Math.min(900, Math.max(560, Math.abs(change) * 0.7));
+           const duration = Math.min(1100, Math.max(680, Math.abs(change) * 0.82));
 
            const animateScroll = (currentTime: number) => {
                const elapsed = currentTime - startTime;
@@ -115,7 +115,7 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
                    return;
                }
                
-               const progress = easeOutCubic(elapsed / duration);
+               const progress = easeInOutCubic(elapsed / duration);
                container.scrollTop = startY + change * progress;
                
                scrollAnimationRef.current = requestAnimationFrame(animateScroll);

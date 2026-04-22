@@ -1,5 +1,137 @@
-import React, { memo, useMemo } from 'react';
+import React, { memo, useCallback, useMemo } from 'react';
 import { SongState } from '../types';
+
+type SyncedLyricLine = SongState['lyrics']['synced'][number];
+
+type LyricsColors = {
+  active: string;
+  upcoming: string;
+  faded: string;
+  inactive: string;
+};
+
+type LyricVisualState = {
+  className: string;
+  color: string;
+  textShadow: string;
+};
+
+const getLyricVisualState = (
+  idx: number,
+  effectiveIndex: number,
+  isAtStart: boolean,
+  autoScrollEnabled: boolean,
+  lyricsColors: LyricsColors
+): LyricVisualState => {
+  const distance = idx - effectiveIndex;
+  const isActive = idx === effectiveIndex;
+
+  let opacityClass = "opacity-0";
+  let scaleClass = "scale-95";
+  let pointerEvents = "pointer-events-none";
+  let color = lyricsColors.inactive;
+  let textShadow = 'none';
+
+  if (!autoScrollEnabled) {
+    if (isActive) {
+      opacityClass = "opacity-100";
+      scaleClass = "scale-105";
+      color = lyricsColors.active;
+      textShadow = '0 0 14px rgba(255,255,255,0.24)';
+    } else {
+      opacityClass = "opacity-80";
+      scaleClass = "scale-100";
+      color = lyricsColors.upcoming;
+    }
+    pointerEvents = "pointer-events-auto";
+  } else if (isAtStart && idx < 4) {
+    if (idx === 0) {
+      opacityClass = "opacity-90";
+      scaleClass = "scale-105";
+      color = lyricsColors.active;
+      textShadow = '0 0 10px rgba(255,255,255,0.16)';
+    } else if (idx === 1) {
+      opacityClass = "opacity-70";
+      scaleClass = "scale-100";
+      color = lyricsColors.upcoming;
+    } else if (idx === 2) {
+      opacityClass = "opacity-40";
+      scaleClass = "scale-100";
+      color = lyricsColors.upcoming;
+    } else {
+      opacityClass = "opacity-20";
+      scaleClass = "scale-100";
+      color = lyricsColors.upcoming;
+    }
+    pointerEvents = "pointer-events-auto";
+  } else if (isActive) {
+    opacityClass = "opacity-90";
+    scaleClass = "scale-110";
+    pointerEvents = "pointer-events-auto";
+    color = lyricsColors.active;
+    textShadow = '0 0 14px rgba(255,255,255,0.28)';
+  } else if (distance === -1) {
+    opacityClass = "opacity-0";
+    scaleClass = "scale-95";
+  } else if (distance > 0 && distance <= 4) {
+    if (distance === 1) {
+      opacityClass = "opacity-60";
+      color = lyricsColors.upcoming;
+    } else if (distance === 2) {
+      opacityClass = "opacity-30";
+      color = lyricsColors.faded;
+    } else if (distance === 3) {
+      opacityClass = "opacity-15";
+      color = lyricsColors.faded;
+    } else {
+      opacityClass = "opacity-5";
+      color = lyricsColors.inactive;
+    }
+    scaleClass = "scale-100";
+    pointerEvents = "pointer-events-auto";
+  }
+
+  return {
+    className: `${isActive ? "active-lyric" : ""} ${opacityClass} ${scaleClass} ${pointerEvents}`,
+    color,
+    textShadow,
+  };
+};
+
+interface SyncedLyricRowProps {
+  line: SyncedLyricLine;
+  className: string;
+  color: string;
+  textShadow: string;
+  onSeek: (time: number) => void;
+}
+
+const SyncedLyricRow = memo(({
+  line,
+  className,
+  color,
+  textShadow,
+  onSeek,
+}: SyncedLyricRowProps) => (
+  <div
+    onClick={() => onSeek(line.time)}
+    className={`lyric-item first:mt-0 my-5 md:my-7 text-2xl md:text-[2.5rem] leading-tight cursor-pointer select-none transform-gpu tracking-normal ${className}`}
+    style={{
+      color,
+      textShadow,
+    }}
+  >
+    {line.text || "♪"}
+  </div>
+), (prev, next) =>
+  prev.line === next.line &&
+  prev.className === next.className &&
+  prev.color === next.color &&
+  prev.textShadow === next.textShadow &&
+  prev.onSeek === next.onSeek
+);
+
+SyncedLyricRow.displayName = "SyncedLyricRow";
 
 interface LyricsViewProps {
   lyrics: SongState['lyrics'];
@@ -37,6 +169,13 @@ export const LyricsView = memo(({
       inactive: 'rgba(255, 255, 255, 0.2)',          // Very dim for inactive
     };
   }, [dominantColor]);
+
+  const handleSeek = useCallback((time: number) => {
+    if (audioRef.current) {
+      audioRef.current.currentTime = time;
+    }
+  }, [audioRef]);
+
   // Check if we have lyrics to show
   const hasLyrics = lyrics.synced.length > 0 || lyrics.plain.length > 0;
 
@@ -81,106 +220,28 @@ export const LyricsView = memo(({
           onTouchMove={stopAutoScroll}
         >
           {lyrics.synced.map((line, idx) => {
-            const distance = idx - effectiveIndex;
-            const isActive = idx === effectiveIndex;
-
-            let opacityClass = "opacity-0";
-            let scaleClass = "scale-95";
-            let pointerEvents = "pointer-events-none";
-
-            // PRIORITY 1: User browsing mode (auto-scroll disabled) - HIGHEST PRIORITY
-            // When user scrolls, EVERYTHING should be clear and readable
-            if (!autoScrollEnabled) {
-              if (isActive) {
-                 opacityClass = "opacity-100";
-                 scaleClass = "scale-105";
-              } else {
-                 opacityClass = "opacity-80"; // Slightly dimmer but very readable
-                 scaleClass = "scale-100";
-              }
-              pointerEvents = "pointer-events-auto";
-            }
-            // PRIORITY 2: Start state (before first lyric is sung)
-            else if (isAtStart && idx < 4) {
-              if (idx === 0) {
-                opacityClass = "opacity-90";
-                scaleClass = "scale-105";
-              } else if (idx === 1) {
-                opacityClass = "opacity-70";
-                scaleClass = "scale-100";
-              } else if (idx === 2) {
-                opacityClass = "opacity-40";
-                scaleClass = "scale-100";
-              } else {
-                opacityClass = "opacity-20";
-                scaleClass = "scale-100";
-              }
-              pointerEvents = "pointer-events-auto";
-            }
-            // PRIORITY 3: Active lyric (when not at start)
-            else if (isActive) {
-              opacityClass = "opacity-90";
-              scaleClass = "scale-110";
-              pointerEvents = "pointer-events-auto";
-            }
-            // PRIORITY 4: Normal playback mode (upcoming/past lyrics)
-            else {
-              if (distance === -1) {
-                // Just passed - fade out completely
-                opacityClass = "opacity-0"; 
-                scaleClass = "scale-95";
-              } else if (distance > 0 && distance <= 4) {
-                const forwardDist = distance;
-                if (forwardDist === 1) {
-                  opacityClass = "opacity-60";
-                } else if (forwardDist === 2) {
-                  opacityClass = "opacity-30";
-                } else if (forwardDist === 3) {
-                  opacityClass = "opacity-15";
-                } else {
-                  opacityClass = "opacity-5";
-                }
-                scaleClass = "scale-100";
-                pointerEvents = "pointer-events-auto";
-              }
-              // Else: opacity-0 (hidden)
-            }
-
-            // Determine text color and styling based on state
-            let textColor = lyricsColors.inactive;
-            const fontWeight = 700; // Always bold as requested
-            let textShadow = 'none';
-            
-            if (isAtStart && idx < 4) {
-              textColor = idx === 0 ? lyricsColors.active : lyricsColors.upcoming;
-              if (idx === 0) textShadow = '0 0 10px rgba(255,255,255,0.16)';
-            } else if (isActive) {
-              textColor = lyricsColors.active;
-              textShadow = '0 0 14px rgba(255,255,255,0.28)'; 
-            } else if (!autoScrollEnabled) {
-              textColor = isActive ? lyricsColors.active : lyricsColors.upcoming;
-            } else if (distance > 0 && distance <= 3) {
-              textColor = distance === 1 ? lyricsColors.upcoming : lyricsColors.faded;
-            }
+            const visualState = getLyricVisualState(
+              idx,
+              effectiveIndex,
+              isAtStart,
+              autoScrollEnabled,
+              lyricsColors
+            );
 
             return (
-              <div
+              <React.Fragment key={idx}>
+              <SyncedLyricRow
                 key={idx}
-                onClick={() =>
-                  audioRef.current &&
-                  (audioRef.current.currentTime = line.time)
-                }
-                className={`lyric-item first:mt-0 my-5 md:my-7 text-2xl md:text-[2.5rem] leading-tight cursor-pointer select-none transform-gpu tracking-normal ${
-                  isActive ? "active-lyric" : ""
-                } ${opacityClass} ${scaleClass} ${pointerEvents}`}
-                style={{ 
-                  color: textColor,
-                  fontWeight,
-                  textShadow,
-                }}
-              >
+                line={line}
+                className={visualState.className}
+                color={visualState.color}
+                textShadow={visualState.textShadow}
+                onSeek={handleSeek}
+              />
+              {/*
                 {line.text || "♪"}
-              </div>
+              */}
+              </React.Fragment>
             );
           })}
         </div>
