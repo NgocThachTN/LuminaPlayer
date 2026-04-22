@@ -101,12 +101,87 @@ const fetchLrcLibLyrics = async (
   }
 };
 
+const fetchYouTubeMusicLyrics = async (
+  title: string,
+  artist: string
+): Promise<LyricsResult> => {
+  const emptyResult: LyricsResult = { synced: [], plain: [], isSynced: false };
+
+  try {
+    console.log(`[youtube-music] Searching: title="${title}", artist="${artist}"`);
+
+    const data = window.electronAPI?.fetchYouTubeMusicLyrics
+      ? await window.electronAPI.fetchYouTubeMusicLyrics(title, artist)
+      : await fetchYouTubeMusicLyricsFromDevProxy(title, artist);
+    const synced = Array.isArray(data?.synced)
+      ? data.synced.filter((line) => Number.isFinite(line?.time) && line?.text)
+      : [];
+    const rawLyrics = data?.lyrics || "";
+    if (synced.length === 0 && !rawLyrics) {
+      console.log("[youtube-music] No lyrics found");
+      return emptyResult;
+    }
+
+    const plain = rawLyrics
+      ? rawLyrics.split("\n").map((line) => line.trim()).filter(Boolean)
+      : synced.map((line) => line.text);
+
+    if (synced.length > 0 || plain.length > 0) {
+      console.log(
+        `[youtube-music] Found ${synced.length > 0 ? "synced" : "plain"} lyrics` +
+          (data?.title || data?.artist
+            ? `: "${data?.title || title}" by "${data?.artist || artist}"`
+            : "")
+      );
+      return { synced, plain, isSynced: synced.length > 0 };
+    }
+
+    console.log("[youtube-music] Response did not include usable lyrics");
+    return emptyResult;
+  } catch (error) {
+    console.error("Error fetching from YouTube Music:", error);
+    return emptyResult;
+  }
+};
+
+const fetchYouTubeMusicLyricsFromDevProxy = async (
+  title: string,
+  artist: string
+): Promise<{ lyrics: string; synced?: LyricLine[]; videoId?: string; title?: string; artist?: string } | null> => {
+  try {
+    const params = new URLSearchParams({ title, artist });
+    const response = await fetch(`/api/youtube-music-lyrics?${params}`);
+    if (!response.ok) return null;
+    return await response.json();
+  } catch {
+    return null;
+  }
+};
+
 // Extract both synced and plain lyrics from result
 const extractLyrics = (result: any): LyricsResult => {
   const synced = result.syncedLyrics ? parseLRC(result.syncedLyrics) : [];
   const plain = result.plainLyrics
     ? result.plainLyrics.split("\n").filter((l: string) => l.trim())
     : parsePlainFromSynced(result.syncedLyrics);
+
+  return {
+    synced,
+    plain,
+    isSynced: synced.length > 0,
+  };
+};
+
+const extractLyricsFromRaw = (rawLyrics: string): LyricsResult => {
+  if (!rawLyrics) return { synced: [], plain: [], isSynced: false };
+
+  const trimmedLyrics = rawLyrics.trim();
+  const synced = trimmedLyrics.startsWith("<")
+    ? parseTTML(trimmedLyrics)
+    : parseLRC(trimmedLyrics);
+  const plain = synced.length > 0
+    ? synced.map((line) => line.text)
+    : trimmedLyrics.split("\n").map((l) => l.trim()).filter(Boolean);
 
   return {
     synced,
@@ -245,6 +320,61 @@ const parseLRC = (lrc: string): LyricLine[] => {
   return lyrics.sort((a, b) => a.time - b.time);
 };
 
+const parseTTMLTime = (value: string | null): number | null => {
+  if (!value) return null;
+
+  const time = value.trim();
+  const unitMatch = time.match(/^([\d.]+)\s*(ms|s|m|h)$/i);
+  if (unitMatch) {
+    const amount = parseFloat(unitMatch[1]);
+    const unit = unitMatch[2].toLowerCase();
+    if (unit === "ms") return amount / 1000;
+    if (unit === "s") return amount;
+    if (unit === "m") return amount * 60;
+    if (unit === "h") return amount * 3600;
+  }
+
+  if (time.includes(":")) {
+    const parts = time.split(":").map((part) => parseFloat(part));
+    if (parts.some((part) => Number.isNaN(part))) return null;
+
+    if (parts.length === 3) {
+      return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    }
+
+    if (parts.length === 2) {
+      return parts[0] * 60 + parts[1];
+    }
+  }
+
+  const seconds = parseFloat(time);
+  return Number.isNaN(seconds) ? null : seconds;
+};
+
+const parseTTML = (ttml: string): LyricLine[] => {
+  if (!ttml || typeof DOMParser === "undefined") return [];
+
+  const doc = new DOMParser().parseFromString(ttml, "application/xml");
+  if (doc.querySelector("parsererror")) return [];
+
+  const lyrics: LyricLine[] = [];
+  const lines = Array.from(doc.getElementsByTagName("p"));
+
+  for (const line of lines) {
+    const firstSpan = line.getElementsByTagName("span")[0];
+    const time =
+      parseTTMLTime(line.getAttribute("begin")) ??
+      parseTTMLTime(firstSpan?.getAttribute("begin") || null);
+    const text = (line.textContent || "").replace(/\s+/g, " ").trim();
+
+    if (time !== null && text) {
+      lyrics.push({ time, text });
+    }
+  }
+
+  return lyrics.sort((a, b) => a.time - b.time);
+};
+
 // Parse plain lyrics from synced lyrics (strip timestamps)
 const parsePlainFromSynced = (lrc: string): string[] => {
   if (!lrc) return [];
@@ -289,24 +419,49 @@ export const getLyrics = async (
     `Searching lyrics for: "${originalTitle}" by "${originalArtist}"`
   );
 
-  // 1. lrclib.net - Try with original first (for CJK songs)
-  let result = await fetchLrcLibLyrics(originalTitle, originalArtist);
-  if (result.synced.length > 0 || result.plain.length > 0) return result;
+  // 1. YouTube Music - prioritize first-party synced/plain lyrics
+  let result = await fetchYouTubeMusicLyrics(originalTitle, originalArtist);
+  if (result.synced.length > 0 || result.plain.length > 0) {
+    console.log(
+      `[lyrics] Using YouTube Music (${result.isSynced ? "synced" : "plain"})`
+    );
+    return result;
+  }
+
+  if (cleanTitle !== originalTitle || cleanArtist !== originalArtist) {
+    result = await fetchYouTubeMusicLyrics(cleanTitle, cleanArtist);
+    if (result.synced.length > 0 || result.plain.length > 0) {
+      console.log(
+        `[lyrics] Using YouTube Music cleaned (${result.isSynced ? "synced" : "plain"})`
+      );
+      return result;
+    }
+  }
+
+  // 2. lrclib.net - Try with original first (for CJK songs)
+  result = await fetchLrcLibLyrics(originalTitle, originalArtist);
+  if (result.synced.length > 0 || result.plain.length > 0) {
+    console.log(`[lyrics] Using LRCLIB (${result.isSynced ? "synced" : "plain"})`);
+    return result;
+  }
 
   // Try with cleaned terms if different
   if (cleanTitle !== originalTitle || cleanArtist !== originalArtist) {
     result = await fetchLrcLibLyrics(cleanTitle, cleanArtist);
-    if (result.synced.length > 0 || result.plain.length > 0) return result;
+    if (result.synced.length > 0 || result.plain.length > 0) {
+      console.log(`[lyrics] Using LRCLIB cleaned (${result.isSynced ? "synced" : "plain"})`);
+      return result;
+    }
   }
 
-  // 2. Fallback to Gemini AI (plain lyrics only)
+  // 3. Fallback to Gemini AI (plain lyrics only)
   const apiKey = await getApiKey();
   if (!apiKey) {
     console.log("No API key available for Gemini fallback");
     return emptyResult;
   }
 
-  console.log("No lrclib lyrics found, using Gemini AI...");
+  console.log("No lyrics found from online sources, using Gemini AI...");
   const ai = new GoogleGenAI({ apiKey });
 
   const prompt = `Tìm lời bài hát "${title}" của "${artist}".

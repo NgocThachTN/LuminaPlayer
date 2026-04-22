@@ -1,7 +1,7 @@
 
 import React from 'react';
-import { SongState, SongMetadata } from '../types';
-import { ensureDarkColor } from '../../services/colorService';
+import { SongState } from '../types';
+import { adjustBrightness, ensureDarkColor, getColorPalette } from '../../services/colorService';
 import { LyricsView } from './LyricsView';
 
 interface PlayerOverlayProps {
@@ -46,6 +46,28 @@ const formatTime = (time: number) => {
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 };
 
+type AmbientPalette = {
+  base: string;
+  primary: string;
+  secondary: string;
+  accent: string;
+  glow: string;
+  shadow: string;
+};
+
+const buildAmbientPalette = (dominantColor: string, coverPalette: string[]): AmbientPalette => {
+  const palette = coverPalette.length ? coverPalette : [dominantColor];
+  const seed = palette[0] || dominantColor || '#171717';
+  const primary = ensureDarkColor(seed, 0.26);
+  const secondary = ensureDarkColor(palette[1] || adjustBrightness(seed, 0.12), 0.32);
+  const accent = palette[2] || palette[1] || adjustBrightness(seed, 0.22);
+  const glow = adjustBrightness(accent, 0.18);
+  const base = ensureDarkColor(dominantColor || seed, 0.18) || '#171717';
+  const shadow = adjustBrightness(base, -0.28);
+
+  return { base, primary, secondary, accent, glow, shadow };
+};
+
 export const PlayerOverlay: React.FC<PlayerOverlayProps> = ({
   state,
   audioInfo,
@@ -77,9 +99,40 @@ export const PlayerOverlay: React.FC<PlayerOverlayProps> = ({
   viewMode
 }) => {
 
-  const bgColor = React.useMemo(() => 
-    ensureDarkColor(dominantColor, 0.2) || '#171717',
-  [dominantColor]);
+  const [coverPalette, setCoverPalette] = React.useState<string[]>([]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    if (!state.metadata.cover) {
+      setCoverPalette([]);
+      return;
+    }
+
+    getColorPalette(state.metadata.cover, 6).then((palette) => {
+      if (!cancelled) {
+        setCoverPalette(palette);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [state.metadata.cover]);
+
+  const ambientPalette = React.useMemo(() =>
+    buildAmbientPalette(dominantColor, coverPalette),
+  [dominantColor, coverPalette]);
+
+  const playerBackgroundStyle = React.useMemo(() => ({
+    backgroundColor: ambientPalette.base,
+    '--cover-bg-base': ambientPalette.base,
+    '--cover-bg-primary': ambientPalette.primary,
+    '--cover-bg-secondary': ambientPalette.secondary,
+    '--cover-bg-accent': ambientPalette.accent,
+    '--cover-bg-glow': ambientPalette.glow,
+    '--cover-bg-shadow': ambientPalette.shadow,
+  } as React.CSSProperties), [ambientPalette]);
 
   // Scroll to active line when opening lyrics - instant scroll to prevent jump
   React.useLayoutEffect(() => {
@@ -100,53 +153,31 @@ export const PlayerOverlay: React.FC<PlayerOverlayProps> = ({
     <>
     <div 
       className={`fixed inset-0 z-[60] flex flex-col md:flex-row transition-transform duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] ${isFullScreenPlayer ? 'translate-y-0' : 'translate-y-full'}`}
-      style={{ backgroundColor: bgColor }} 
+      style={playerBackgroundStyle}
     >
-       {/* Apple Music Style Blurred Album Background */}
-       {state.metadata.cover && (
-         <div 
-           className="absolute inset-0 z-0 overflow-hidden"
-           aria-hidden="true"
-         >
-           {/* Base layer - heavily blurred album art using img for consistent color */}
+       <div 
+         className={`lumina-ambient-background absolute inset-0 z-0 overflow-hidden ${state.isPlaying ? 'lumina-ambient-playing' : ''}`}
+         aria-hidden="true"
+       >
+         {state.metadata.cover && (
+           <>
            <img 
              src={state.metadata.cover}
              alt=""
-             className="absolute inset-[-150px] w-[calc(100%+300px)] h-[calc(100%+300px)] object-cover transition-all duration-[1500ms] ease-out"
-             style={{ 
-               filter: 'blur(120px) saturate(1.8) brightness(0.7)',
-               transform: 'scale(1.5)',
-             }}
+             className="lumina-cover-field"
            />
-           {/* Color accent layer - adds depth and vibrancy */}
            <img 
              src={state.metadata.cover}
              alt=""
-             className="absolute inset-[-80px] w-[calc(100%+160px)] h-[calc(100%+160px)] object-cover mix-blend-overlay opacity-70 transition-all duration-[1500ms]"
-             style={{ 
-               filter: 'blur(80px) saturate(2.0)',
-               transform: 'scale(1.3)',
-             }}
+             className="lumina-cover-wash"
            />
-           {/* Subtle grain for smooth color transitions */}
-           <div 
-             className="absolute inset-0 opacity-[0.04] pointer-events-none"
-             style={{
-               backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E")`,
-             }}
-           />
-           {/* Vignette overlay - Apple Music style darkening at edges */}
-           <div 
-             className="absolute inset-0"
-             style={{
-               background: 'radial-gradient(ellipse at center, transparent 0%, rgba(0,0,0,0.4) 50%, rgba(0,0,0,0.8) 100%)',
-             }}
-           />
-           {/* Top-to-bottom gradient for content readability - Darker for accessibility */}
-           <div className="absolute inset-0 bg-black/30 mix-blend-multiply" />
-           <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/60" />
-         </div>
-       )}
+           </>
+         )}
+         <div className="lumina-ambient-mesh" />
+         <div className="lumina-ambient-depth" />
+         <div className="lumina-ambient-grain" />
+         <div className="lumina-ambient-readability" />
+       </div>
        {/* Collapse Button */}
        <button 
          onClick={() => {

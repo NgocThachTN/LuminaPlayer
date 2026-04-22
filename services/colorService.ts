@@ -42,6 +42,49 @@ export const getDominantColor = (imageSrc: string): Promise<string> => {
   });
 };
 
+const rgbToHex = (color: number[]): string => {
+    return "#" + color.map(x => {
+        const hex = x.toString(16);
+        return hex.length === 1 ? '0' + hex : hex;
+    }).join('');
+};
+
+/**
+ * Extracts a small color palette from an image URL.
+ */
+export const getColorPalette = (imageSrc: string, colorCount: number = 6): Promise<string[]> => {
+  return new Promise((resolve) => {
+    if (!imageSrc) {
+      resolve(["#111111"]);
+      return;
+    }
+
+    const img = new Image();
+    img.crossOrigin = "Anonymous";
+    img.src = imageSrc;
+
+    img.onload = () => {
+      try {
+        const colorThief = new ColorThief();
+        const palette = colorThief.getPalette(img, colorCount);
+
+        if (palette && palette.length) {
+          resolve(palette.map(rgbToHex));
+        } else {
+          resolve(["#111111"]);
+        }
+      } catch (e) {
+        console.warn("Palette extraction failed, using fallback", e);
+        resolve(["#111111"]);
+      }
+    };
+
+    img.onerror = () => {
+      resolve(["#111111"]);
+    };
+  });
+};
+
 /**
  * Adjusts brightness of a hex color
  * percent: -1.0 to 1.0 (negative to darken, positive to lighten)

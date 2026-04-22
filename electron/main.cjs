@@ -354,6 +354,98 @@ function normalizeComparable(value) {
   return normalizeCoverQueryPart(stripCoverSearchNoise(value));
 }
 
+function normalizeLyricsComparable(value) {
+  return String(value || "")
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[\u30a1-\u30f6]/g, (char) =>
+      String.fromCharCode(char.charCodeAt(0) - 0x60)
+    )
+    .replace(/\b(?:feat|ft|featuring|official|audio|video|lyrics|mv|version)\b/gi, " ")
+    .replace(/[()[\]{}'"`~!@#$%^&*_+=|\\:;,.<>/?-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getLatinTokens(value) {
+  return normalizeLyricsComparable(value)
+    .split(/\s+/)
+    .filter((token) => /^[a-z0-9]+$/.test(token) && token.length >= 2);
+}
+
+function getNonLatinCompact(value) {
+  return normalizeLyricsComparable(value)
+    .replace(/[a-z0-9\s]/g, "")
+    .replace(/\s+/g, "");
+}
+
+function stripJapaneseDecorations(value) {
+  return String(value || "")
+    .normalize("NFKC")
+    .replace(/\s*[-–—:：]\s*[A-Za-z0-9][A-Za-z0-9\s'’!?.,-]*$/g, "")
+    .replace(/\s*\([^)]*[A-Za-z][^)]*\)\s*/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function buildYouTubeMusicLyricsQueries(title, artist) {
+  const rawTitle = String(title || "").trim();
+  const rawArtist = String(artist || "").trim();
+  const japaneseTitle = stripJapaneseDecorations(rawTitle);
+  const titleTokens = getLatinTokens(rawTitle);
+  const hasNonLatinTitle = !!getNonLatinCompact(rawTitle);
+  const compactTitle = normalizeLyricsComparable(rawTitle).replace(/\s+/g, "");
+  const queries = [
+    rawArtist && rawTitle ? `${rawArtist} ${rawTitle}` : rawTitle,
+    rawArtist && japaneseTitle && japaneseTitle !== rawTitle ? `${rawArtist} ${japaneseTitle}` : "",
+    rawArtist && titleTokens.length ? `${rawArtist} ${titleTokens.join(" ")}` : "",
+    rawArtist && compactTitle && compactTitle !== normalizeLyricsComparable(rawTitle) ? `${rawArtist} ${compactTitle}` : "",
+    rawArtist && hasNonLatinTitle ? rawArtist : "",
+    rawTitle,
+    japaneseTitle !== rawTitle ? japaneseTitle : "",
+  ];
+
+  return queries
+    .map((query) => query.trim())
+    .filter(Boolean)
+    .filter((query, index, list) => list.indexOf(query) === index);
+}
+
+function textMatchesLoosely(wanted, candidate) {
+  const wantedNorm = normalizeLyricsComparable(wanted);
+  const candidateNorm = normalizeLyricsComparable(candidate);
+  if (!wantedNorm || !candidateNorm) return true;
+
+  const wantedNonLatin = getNonLatinCompact(wanted);
+  const candidateNonLatin = getNonLatinCompact(candidate);
+  if (wantedNonLatin && candidateNonLatin) {
+    return candidateNonLatin.includes(wantedNonLatin) ||
+      wantedNonLatin.includes(candidateNonLatin);
+  }
+
+  if (
+    candidateNorm.includes(wantedNorm) ||
+    wantedNorm.includes(candidateNorm) ||
+    candidateNorm.replace(/\s+/g, "").includes(wantedNorm.replace(/\s+/g, "")) ||
+    wantedNorm.replace(/\s+/g, "").includes(candidateNorm.replace(/\s+/g, ""))
+  ) {
+    return true;
+  }
+
+  const wantedLatin = getLatinTokens(wanted);
+  const candidateLatin = getLatinTokens(candidate);
+  if (wantedLatin.length > 0) {
+    return wantedLatin.every((token) =>
+      candidateLatin.some(
+        (candidateToken) =>
+          candidateToken.includes(token) || token.includes(candidateToken)
+      )
+    );
+  }
+
+  return false;
+}
+
 function isLikelyDeezerMatch(result, title, artist, album, mode) {
   const wantedArtist = normalizeComparable(artist);
   const wantedTitle = normalizeComparable(title);
@@ -641,6 +733,355 @@ async function searchYouTubeMusic(query, forceRefresh = false) {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function getYouTubeMusicRendererVideoId(renderer) {
+  return (
+    renderer?.playlistItemData?.videoId ||
+    renderer?.overlay?.musicItemThumbnailOverlayRenderer?.content
+      ?.musicPlayButtonRenderer?.playNavigationEndpoint?.watchEndpoint?.videoId ||
+    renderer?.flexColumns?.[0]?.musicResponsiveListItemFlexColumnRenderer?.text
+      ?.runs?.find((run) => run?.navigationEndpoint?.watchEndpoint?.videoId)
+      ?.navigationEndpoint?.watchEndpoint?.videoId ||
+    null
+  );
+}
+
+function buildYouTubeMusicSongCandidate(renderer) {
+  const title = getRunsText(
+    renderer?.flexColumns?.[0]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs
+  );
+  const subtitleSegments = getYouTubeMusicTextSegments(
+    renderer?.flexColumns?.[1]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs
+  );
+  const type = normalizeCoverQueryPart(subtitleSegments[0]);
+  const artist = subtitleSegments[1] || "";
+  const videoId = getYouTubeMusicRendererVideoId(renderer);
+
+  if (!title || !videoId || (type !== "song" && type !== "video")) {
+    return null;
+  }
+
+  return { type, title, artist, videoId };
+}
+
+function collectYouTubeMusicSongCandidates(node, results = []) {
+  if (!node || typeof node !== "object") {
+    return results;
+  }
+
+  if (Array.isArray(node)) {
+    for (const entry of node) {
+      collectYouTubeMusicSongCandidates(entry, results);
+    }
+    return results;
+  }
+
+  if (node.musicResponsiveListItemRenderer) {
+    const candidate = buildYouTubeMusicSongCandidate(node.musicResponsiveListItemRenderer);
+    if (
+      candidate &&
+      !results.some((result) => result.videoId === candidate.videoId)
+    ) {
+      results.push(candidate);
+    }
+  }
+
+  for (const value of Object.values(node)) {
+    collectYouTubeMusicSongCandidates(value, results);
+  }
+
+  return results;
+}
+
+async function searchYouTubeMusicSongs(query, forceRefresh = false) {
+  const config = await getYouTubeMusicConfig(forceRefresh);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+
+  try {
+    const context = JSON.parse(JSON.stringify(config.context));
+    if (context?.client) {
+      context.client.originalUrl = `https://music.youtube.com/search?q=${encodeURIComponent(query)}`;
+    }
+
+    const response = await fetch(
+      `https://music.youtube.com/youtubei/v1/search?prettyPrint=false&key=${config.apiKey}`,
+      {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          ...YOUTUBE_MUSIC_HEADERS,
+          "Accept": "application/json",
+          "Content-Type": "application/json",
+          "Origin": "https://music.youtube.com",
+          "Referer": `https://music.youtube.com/search?q=${encodeURIComponent(query)}`,
+        },
+        body: JSON.stringify({ context, query }),
+      }
+    );
+
+    if (!response.ok) {
+      if (!forceRefresh) {
+        return searchYouTubeMusicSongs(query, true);
+      }
+
+      throw new Error(`YouTube Music song search failed: ${response.status}`);
+    }
+
+    return collectYouTubeMusicSongCandidates(await response.json());
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function isLikelyYouTubeMusicSongMatch(result, title, artist) {
+  return (
+    textMatchesLoosely(title, result?.title) &&
+    textMatchesLoosely(artist, result?.artist)
+  );
+}
+
+function collectYouTubeMusicBrowseEndpoints(node, results = []) {
+  if (!node || typeof node !== "object") {
+    return results;
+  }
+
+  if (Array.isArray(node)) {
+    for (const entry of node) {
+      collectYouTubeMusicBrowseEndpoints(entry, results);
+    }
+    return results;
+  }
+
+  if (node.browseEndpoint?.browseId) {
+    results.push(node.browseEndpoint);
+  }
+
+  for (const value of Object.values(node)) {
+    collectYouTubeMusicBrowseEndpoints(value, results);
+  }
+
+  return results;
+}
+
+function collectYouTubeMusicLyricsTexts(node, results = []) {
+  if (!node || typeof node !== "object") {
+    return results;
+  }
+
+  if (Array.isArray(node)) {
+    for (const entry of node) {
+      collectYouTubeMusicLyricsTexts(entry, results);
+    }
+    return results;
+  }
+
+  const description = getRunsText(node.musicDescriptionShelfRenderer?.description?.runs);
+  if (description) {
+    results.push(description);
+  }
+
+  for (const value of Object.values(node)) {
+    collectYouTubeMusicLyricsTexts(value, results);
+  }
+
+  return results;
+}
+
+function collectYouTubeMusicTimedLyrics(node, results = []) {
+  if (!node || typeof node !== "object") {
+    return results;
+  }
+
+  if (Array.isArray(node)) {
+    for (const entry of node) {
+      collectYouTubeMusicTimedLyrics(entry, results);
+    }
+    return results;
+  }
+
+  const timedData =
+    node.timedLyricsModel?.lyricsData?.timedLyricsData ||
+    node.lyricsData?.timedLyricsData ||
+    node.timedLyricsData;
+  if (Array.isArray(timedData)) {
+    results.push(timedData);
+  }
+
+  for (const value of Object.values(node)) {
+    collectYouTubeMusicTimedLyrics(value, results);
+  }
+
+  return results;
+}
+
+function parseYouTubeMusicTimedLyrics(timedData) {
+  if (!Array.isArray(timedData)) return [];
+
+  return timedData
+    .map((entry) => {
+      const text = String(entry?.lyricLine || "").trim();
+      const startMs = Number(entry?.cueRange?.startTimeMilliseconds);
+      if (!text || !Number.isFinite(startMs)) return null;
+
+      return {
+        time: startMs / 1000,
+        text,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.time - b.time);
+}
+
+async function fetchYouTubeMusicLyricsForVideo(videoId, forceRefresh = false) {
+  const config = await getYouTubeMusicConfig(forceRefresh);
+  const context = JSON.parse(JSON.stringify(config.context));
+  if (context?.client) {
+    context.client.originalUrl = `https://music.youtube.com/watch?v=${videoId}`;
+  }
+
+  const nextController = new AbortController();
+  const nextTimeout = setTimeout(() => nextController.abort(), 8000);
+
+  try {
+    const nextResponse = await fetch(
+      `https://music.youtube.com/youtubei/v1/next?prettyPrint=false&key=${config.apiKey}`,
+      {
+        method: "POST",
+        signal: nextController.signal,
+        headers: {
+          ...YOUTUBE_MUSIC_HEADERS,
+          "Accept": "application/json",
+          "Content-Type": "application/json",
+          "Origin": "https://music.youtube.com",
+          "Referer": `https://music.youtube.com/watch?v=${videoId}`,
+        },
+        body: JSON.stringify({ context, videoId }),
+      }
+    );
+
+    if (!nextResponse.ok) {
+      if (!forceRefresh) {
+        return fetchYouTubeMusicLyricsForVideo(videoId, true);
+      }
+
+      throw new Error(`YouTube Music next failed: ${nextResponse.status}`);
+    }
+
+    const lyricsEndpoint = collectYouTubeMusicBrowseEndpoints(await nextResponse.json())
+      .find((endpoint) => String(endpoint.browseId || "").startsWith("MPLY"));
+
+    if (!lyricsEndpoint?.browseId) {
+      return null;
+    }
+
+    const mobileContext = JSON.parse(JSON.stringify(config.context));
+    if (mobileContext?.client) {
+      mobileContext.client.clientName = "ANDROID_MUSIC";
+      mobileContext.client.clientVersion = "7.21.50";
+      mobileContext.client.originalUrl = `https://music.youtube.com/watch?v=${videoId}`;
+    }
+
+    const browseController = new AbortController();
+    const browseTimeout = setTimeout(() => browseController.abort(), 8000);
+
+    try {
+      const timedResponse = await fetch(
+        `https://music.youtube.com/youtubei/v1/browse?prettyPrint=false&key=${config.apiKey}`,
+        {
+          method: "POST",
+          signal: browseController.signal,
+          headers: {
+            ...YOUTUBE_MUSIC_HEADERS,
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "Origin": "https://music.youtube.com",
+            "Referer": `https://music.youtube.com/watch?v=${videoId}`,
+          },
+          body: JSON.stringify({
+            context: mobileContext,
+            browseId: lyricsEndpoint.browseId,
+            params: lyricsEndpoint.params,
+          }),
+        }
+      );
+
+      if (timedResponse.ok) {
+        const timedLyrics = collectYouTubeMusicTimedLyrics(await timedResponse.json())
+          .map(parseYouTubeMusicTimedLyrics)
+          .find((lyrics) => lyrics.length > 0);
+
+        if (timedLyrics?.length) {
+          return {
+            lyrics: timedLyrics.map((line) => line.text).join("\n"),
+            synced: timedLyrics,
+          };
+        }
+      }
+
+      const plainResponse = await fetch(
+        `https://music.youtube.com/youtubei/v1/browse?prettyPrint=false&key=${config.apiKey}`,
+        {
+          method: "POST",
+          signal: browseController.signal,
+          headers: {
+            ...YOUTUBE_MUSIC_HEADERS,
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "Origin": "https://music.youtube.com",
+            "Referer": `https://music.youtube.com/watch?v=${videoId}`,
+          },
+          body: JSON.stringify({
+            context,
+            browseId: lyricsEndpoint.browseId,
+            params: lyricsEndpoint.params,
+          }),
+        }
+      );
+
+      if (!plainResponse.ok) {
+        throw new Error(`YouTube Music lyrics browse failed: ${plainResponse.status}`);
+      }
+
+      const lyrics = collectYouTubeMusicLyricsTexts(await plainResponse.json())
+        .sort((a, b) => b.length - a.length)[0];
+
+      return lyrics ? { lyrics } : null;
+    } finally {
+      clearTimeout(browseTimeout);
+    }
+  } finally {
+    clearTimeout(nextTimeout);
+  }
+}
+
+async function fetchLyricsFromYouTubeMusic(title, artist) {
+  const attempts = buildYouTubeMusicLyricsQueries(title, artist);
+
+  for (const query of attempts) {
+    try {
+      const candidates = await searchYouTubeMusicSongs(query);
+      const matchedCandidates = candidates
+        .filter((candidate) => isLikelyYouTubeMusicSongMatch(candidate, title, artist))
+
+      for (const candidate of matchedCandidates.slice(0, 5)) {
+        const lyrics = await fetchYouTubeMusicLyricsForVideo(candidate.videoId);
+        if (lyrics) {
+          return {
+            ...lyrics,
+            videoId: candidate.videoId,
+            title: candidate.title,
+            artist: candidate.artist,
+          };
+        }
+      }
+    } catch (error) {
+      console.warn(`YouTube Music lyrics lookup failed (${query}):`, error?.message || error);
+    }
+  }
+
+  return null;
 }
 
 function getDeezerCoverUrl(result) {
@@ -1153,6 +1594,17 @@ ipcMain.handle("set-api-key", (event, apiKey) => {
 ipcMain.handle("has-api-key", () => {
   const config = getConfig();
   return !!config.apiKey;
+});
+
+ipcMain.handle("fetch-youtube-music-lyrics", async (event, { title, artist }) => {
+  if (!title || !artist) return null;
+
+  try {
+    return await fetchLyricsFromYouTubeMusic(title, artist);
+  } catch (error) {
+    console.warn("YouTube Music lyrics lookup failed:", error?.message || error);
+    return null;
+  }
 });
 
 // IPC handlers for playlist persistence
