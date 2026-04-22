@@ -313,10 +313,16 @@ const LibraryViewBase: React.FC<LibraryViewProps> = ({
   useEffect(() => {
     if (viewMode === "playlist" && state.currentSongIndex >= 0) {
       requestAnimationFrame(() => {
-        playlistVirtualizer.scrollToIndex(state.currentSongIndex, { align: 'center' });
+        const visibleIndex = playlistData.findIndex(
+          (item) => playlistDataRaw.indexOf(item) === state.currentSongIndex
+        );
+        playlistVirtualizer.scrollToIndex(
+          visibleIndex >= 0 ? visibleIndex : state.currentSongIndex,
+          { align: 'center' }
+        );
       });
     }
-  }, [viewMode, state.currentSongIndex]);
+  }, [viewMode, state.currentSongIndex, playlistData, playlistDataRaw, playlistVirtualizer]);
 
    // Scroll to current album when albums view opens
    useEffect(() => {
@@ -552,6 +558,8 @@ const LibraryViewBase: React.FC<LibraryViewProps> = ({
                         const idx = virtualRow.index;
                         const item = playlistData[idx];
                         if (!item) return null;
+                        const sourceIndex = playlistDataRaw.indexOf(item);
+                        const playIndex = sourceIndex >= 0 ? sourceIndex : idx;
                         
                         const currentSong = state.playlist[state.currentSongIndex];
                         const isCurrentSong = currentSong && (
@@ -561,9 +569,9 @@ const LibraryViewBase: React.FC<LibraryViewProps> = ({
 
                         return (
                           <div
-                            key={idx}
-                            data-index={idx}
-                            onClick={() => handleSongSelect(idx)}
+                            key={`${item.path || item.name}-${playIndex}`}
+                            data-index={playIndex}
+                            onClick={() => handleSongSelect(playIndex)}
                             className={`playlist-item virtual-list-item group flex items-center px-4 py-3 rounded-md cursor-pointer h-[56px] transition-colors ${
                               isCurrentSong ? "active bg-white/5" : "hover:bg-white/5"
                             }`}
@@ -589,7 +597,7 @@ const LibraryViewBase: React.FC<LibraryViewProps> = ({
                                   togglePlay();
                                 } else {
                                   // Play this song
-                                  handleSongSelect(idx);
+                                  handleSongSelect(playIndex);
                                 }
                               }}
                             >
