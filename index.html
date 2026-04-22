@@ -47,23 +47,21 @@
         /* Enhanced Lyrics Styling - Apple Music Style (Performance Optimized) */
         .lyric-item {
             position: relative;
-            /* Optimized: shorter duration, no filter transition */
-            transition: transform 0.3s ease-out, opacity 0.3s ease-out;
+            transition: transform 620ms cubic-bezier(0.16, 1, 0.3, 1), opacity 560ms ease-out;
             opacity: 0.45;
             padding: 1rem 2rem;
             margin: 0.5rem 0;
             border-radius: 12px;
             transform: scale(0.98) translateZ(0); /* GPU layer */
             transform-origin: left center;
-            will-change: transform, opacity;
+            backface-visibility: hidden;
             font-weight: 600;
             font-size: 2.25rem;
             line-height: 1.3;
-            letter-spacing: -0.01em;
+            letter-spacing: 0;
             color: #ffffff;
-            /* Removed blur for performance - use opacity instead */
             cursor: pointer;
-            contain: layout style; /* Isolate repaints */
+            contain: layout paint style;
         }
         .lyric-item:hover {
             opacity: 0.7;
@@ -75,7 +73,8 @@
             transform: scale(1.05) translateZ(0);
             font-weight: 600;
             color: #ffffff;
-            text-shadow: 0 0 20px rgba(255, 255, 255, 0.6);
+            text-shadow: 0 0 12px rgba(255, 255, 255, 0.28);
+            will-change: transform, opacity;
         }
         .lyric-item.active-lyric::before {
             display: none;
@@ -325,7 +324,7 @@
             object-fit: cover;
             pointer-events: none;
             user-select: none;
-            will-change: transform, filter, opacity;
+            will-change: transform, opacity;
         }
         .lumina-cover-field {
             opacity: 0.58;
@@ -359,7 +358,7 @@
             transform: scale(1.05);
             animation: lumina-mesh-flow 28s ease-in-out infinite alternate;
             animation-play-state: paused;
-            will-change: transform, filter, opacity;
+            will-change: transform, opacity;
         }
         .lumina-ambient-depth {
             position: absolute;
@@ -392,11 +391,9 @@
         @keyframes lumina-cover-drift {
             0% {
                 transform: scale(1.22) translate3d(-2%, -1%, 0) rotate(-1deg);
-                filter: blur(96px) saturate(1.95) brightness(0.68);
             }
             100% {
                 transform: scale(1.3) translate3d(2%, 1.5%, 0) rotate(2deg);
-                filter: blur(112px) saturate(2.28) brightness(0.76);
             }
         }
         @keyframes lumina-cover-wash {
@@ -412,13 +409,20 @@
         @keyframes lumina-mesh-flow {
             0% {
                 transform: scale(1.04) translate3d(-1%, 0, 0);
-                filter: blur(16px) saturate(1.22);
                 opacity: 0.64;
             }
             100% {
                 transform: scale(1.11) translate3d(1.4%, -1%, 0);
-                filter: blur(26px) saturate(1.5);
                 opacity: 0.82;
+            }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .lumina-cover-field,
+            .lumina-cover-wash,
+            .lumina-ambient-mesh,
+            .lyric-item {
+                animation: none !important;
+                transition-duration: 0.01ms !important;
             }
         }
         /* Vinyl record effect behind cover */

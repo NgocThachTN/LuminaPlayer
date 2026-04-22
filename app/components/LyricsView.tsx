@@ -1,39 +1,5 @@
-import React, { memo, useEffect, useRef, useMemo } from 'react';
+import React, { memo, useMemo } from 'react';
 import { SongState } from '../types';
-
-// Helper to lighten a hex color for lyrics visibility
-const lightenColor = (hex: string, amount: number): string => {
-  // Remove # if present
-  hex = hex.replace('#', '');
-  
-  // Parse RGB
-  let r = parseInt(hex.substring(0, 2), 16);
-  let g = parseInt(hex.substring(2, 4), 16);
-  let b = parseInt(hex.substring(4, 6), 16);
-  
-  // Lighten each channel
-  r = Math.min(255, Math.round(r + (255 - r) * amount));
-  g = Math.min(255, Math.round(g + (255 - g) * amount));
-  b = Math.min(255, Math.round(b + (255 - b) * amount));
-  
-  return `rgb(${r}, ${g}, ${b})`;
-};
-
-// Helper to get a tinted white based on dominant color
-const getTintedWhite = (hex: string, tintAmount: number = 0.15): string => {
-  hex = hex.replace('#', '');
-  
-  let r = parseInt(hex.substring(0, 2), 16);
-  let g = parseInt(hex.substring(2, 4), 16);
-  let b = parseInt(hex.substring(4, 6), 16);
-  
-  // Blend with white while keeping color tint
-  r = Math.min(255, Math.round(255 - (255 - r) * tintAmount));
-  g = Math.min(255, Math.round(255 - (255 - g) * tintAmount));
-  b = Math.min(255, Math.round(255 - (255 - b) * tintAmount));
-  
-  return `rgb(${r}, ${g}, ${b})`;
-};
 
 interface LyricsViewProps {
   lyrics: SongState['lyrics'];
@@ -46,7 +12,6 @@ interface LyricsViewProps {
   audioRef: React.RefObject<HTMLAudioElement>;
   file: File | null;
   hasStarted: boolean;
-  currentTime: number;
   dominantColor?: string;
 }
 
@@ -61,7 +26,6 @@ export const LyricsView = memo(({
   audioRef,
   file,
   hasStarted,
-  currentTime,
   dominantColor = '#4a90d9'
 }: LyricsViewProps) => {
   // Generate dynamic colors based on dominant color
@@ -73,28 +37,6 @@ export const LyricsView = memo(({
       inactive: 'rgba(255, 255, 255, 0.2)',          // Very dim for inactive
     };
   }, [dominantColor]);
-  // Track previous time to detect seeking to start
-  const prevTimeRef = useRef(currentTime);
-  const wasAtStartRef = useRef(false);
-  
-  // Reset scroll when seeking to near start - more aggressive detection
-  useEffect(() => {
-    const prevTime = prevTimeRef.current;
-    prevTimeRef.current = currentTime;
-    
-    // Reset scroll if:
-    // 1. We jumped backward by more than 3 seconds to near start (<3s)
-    // 2. OR we just entered start state (currentTime < 2 but wasn't before)
-    const bigJumpToStart = (prevTime - currentTime > 3) && currentTime < 3;
-    const justEnteredStart = currentTime < 2 && prevTime >= 2;
-    
-    if (bigJumpToStart || justEnteredStart) {
-      if (lyricsContainerRef.current) {
-        lyricsContainerRef.current.scrollTop = 0;
-      }
-    }
-  }, [currentTime, lyricsContainerRef]);
-  
   // Check if we have lyrics to show
   const hasLyrics = lyrics.synced.length > 0 || lyrics.plain.length > 0;
 
@@ -143,7 +85,6 @@ export const LyricsView = memo(({
             const isActive = idx === effectiveIndex;
 
             let opacityClass = "opacity-0";
-            let blurClass = "blur-0";
             let scaleClass = "scale-95";
             let pointerEvents = "pointer-events-none";
 
@@ -157,7 +98,6 @@ export const LyricsView = memo(({
                  opacityClass = "opacity-80"; // Slightly dimmer but very readable
                  scaleClass = "scale-100";
               }
-              blurClass = "blur-0";
               pointerEvents = "pointer-events-auto";
             }
             // PRIORITY 2: Start state (before first lyric is sung)
@@ -165,19 +105,15 @@ export const LyricsView = memo(({
               if (idx === 0) {
                 opacityClass = "opacity-90";
                 scaleClass = "scale-105";
-                blurClass = "blur-0";
               } else if (idx === 1) {
                 opacityClass = "opacity-70";
                 scaleClass = "scale-100";
-                blurClass = "blur-[1px]";
               } else if (idx === 2) {
                 opacityClass = "opacity-40";
                 scaleClass = "scale-100";
-                blurClass = "blur-[2px]";
               } else {
                 opacityClass = "opacity-20";
                 scaleClass = "scale-100";
-                blurClass = "blur-[3px]";
               }
               pointerEvents = "pointer-events-auto";
             }
@@ -186,7 +122,6 @@ export const LyricsView = memo(({
               opacityClass = "opacity-90";
               scaleClass = "scale-110";
               pointerEvents = "pointer-events-auto";
-              blurClass = "blur-0";
             }
             // PRIORITY 4: Normal playback mode (upcoming/past lyrics)
             else {
@@ -194,21 +129,16 @@ export const LyricsView = memo(({
                 // Just passed - fade out completely
                 opacityClass = "opacity-0"; 
                 scaleClass = "scale-95";
-                blurClass = "blur-xs";
               } else if (distance > 0 && distance <= 4) {
                 const forwardDist = distance;
                 if (forwardDist === 1) {
                   opacityClass = "opacity-60";
-                  blurClass = "blur-[1px]";
                 } else if (forwardDist === 2) {
                   opacityClass = "opacity-30";
-                  blurClass = "blur-[2px]";
                 } else if (forwardDist === 3) {
                   opacityClass = "opacity-15";
-                   blurClass = "blur-[3px]";
                 } else {
                   opacityClass = "opacity-5";
-                   blurClass = "blur-[4px]";
                 }
                 scaleClass = "scale-100";
                 pointerEvents = "pointer-events-auto";
@@ -223,11 +153,10 @@ export const LyricsView = memo(({
             
             if (isAtStart && idx < 4) {
               textColor = idx === 0 ? lyricsColors.active : lyricsColors.upcoming;
-              if (idx === 0) textShadow = '0 0 15px rgba(255,255,255,0.2)'; // Reduced glow
+              if (idx === 0) textShadow = '0 0 10px rgba(255,255,255,0.16)';
             } else if (isActive) {
               textColor = lyricsColors.active;
-              // Much softer glow, less intense
-              textShadow = '0 0 20px rgba(255,255,255,0.4), 0 0 5px rgba(255,255,255,0.2)'; 
+              textShadow = '0 0 14px rgba(255,255,255,0.28)'; 
             } else if (!autoScrollEnabled) {
               textColor = isActive ? lyricsColors.active : lyricsColors.upcoming;
             } else if (distance > 0 && distance <= 3) {
@@ -241,9 +170,9 @@ export const LyricsView = memo(({
                   audioRef.current &&
                   (audioRef.current.currentTime = line.time)
                 }
-                className={`lyric-item first:mt-0 my-5 md:my-7 text-2xl md:text-[2.5rem] leading-tight cursor-pointer select-none transition-all duration-700 ease-out transform-gpu tracking-tight ${
+                className={`lyric-item first:mt-0 my-5 md:my-7 text-2xl md:text-[2.5rem] leading-tight cursor-pointer select-none transform-gpu tracking-normal ${
                   isActive ? "active-lyric" : ""
-                } ${opacityClass} ${blurClass} ${scaleClass} ${pointerEvents}`}
+                } ${opacityClass} ${scaleClass} ${pointerEvents}`}
                 style={{ 
                   color: textColor,
                   fontWeight,

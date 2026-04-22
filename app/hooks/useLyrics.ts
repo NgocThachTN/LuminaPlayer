@@ -2,6 +2,28 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { SongState } from "../types";
 
+const findActiveLyricIndex = (
+  lines: SongState["lyrics"]["synced"],
+  currentTime: number
+) => {
+  let low = 0;
+  let high = lines.length - 1;
+  let result = -1;
+
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+
+    if (lines[mid].time <= currentTime) {
+      result = mid;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+
+  return result;
+};
+
 export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioElement>) => {
   const [activeLyricIndex, setActiveLyricIndex] = useState(-1);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
@@ -12,6 +34,7 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
   const lastScrollTimeRef = useRef(0);
   const scrollTimeoutRef = useRef<number | null>(null);
+  const scrollAnimationRef = useRef<number | null>(null);
   const resumeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Keep track of active index in ref for async access (timeout)
@@ -33,12 +56,25 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
     return 1 - Math.pow(1 - t, 3);
   };
 
+  const cancelPendingScroll = useCallback(() => {
+    if (scrollTimeoutRef.current) {
+      cancelAnimationFrame(scrollTimeoutRef.current);
+      scrollTimeoutRef.current = null;
+    }
+
+    if (scrollAnimationRef.current) {
+      cancelAnimationFrame(scrollAnimationRef.current);
+      scrollAnimationRef.current = null;
+    }
+  }, []);
+
   // Helper function to perform the actual scroll
   const performScroll = useCallback((index: number, behavior: ScrollBehavior | "smooth-custom" = "smooth-custom") => {
      if (lyricsContainerRef.current && index >= 0) {
         const activeElement = lyricsContainerRef.current.children[index] as HTMLElement;
         if (activeElement) {
            const container = lyricsContainerRef.current;
+           cancelPendingScroll();
            
            const elementTop = activeElement.offsetTop;
            
@@ -69,38 +105,38 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
            const startY = currentScroll;
            const change = targetScroll - startY;
            const startTime = performance.now();
-           const duration = 700; // Slower, smoother duration
+           const duration = Math.min(900, Math.max(560, Math.abs(change) * 0.7));
 
            const animateScroll = (currentTime: number) => {
                const elapsed = currentTime - startTime;
                if (elapsed > duration) {
                    container.scrollTop = targetScroll;
+                   scrollAnimationRef.current = null;
                    return;
                }
                
                const progress = easeOutCubic(elapsed / duration);
                container.scrollTop = startY + change * progress;
                
-               requestAnimationFrame(animateScroll);
+               scrollAnimationRef.current = requestAnimationFrame(animateScroll);
            };
            
-           requestAnimationFrame(animateScroll);
+           scrollAnimationRef.current = requestAnimationFrame(animateScroll);
         }
      }
-  }, []);
+  }, [cancelPendingScroll]);
 
   // Exposed function to force scroll to active line
   const scrollToActiveLine = useCallback((instant = false) => {
      const idx = activeLyricIndexRef.current;
      if (idx >= 0) {
-        if (scrollTimeoutRef.current) {
-            cancelAnimationFrame(scrollTimeoutRef.current);
-        }
+        cancelPendingScroll();
         scrollTimeoutRef.current = requestAnimationFrame(() => {
+            scrollTimeoutRef.current = null;
             performScroll(idx, instant ? "instant" : "smooth");
         });
      }
-  }, [performScroll]);
+  }, [cancelPendingScroll, performScroll]);
 
   // Resume auto-scroll and snap to current line
   const resumeAutoScroll = useCallback(() => {
@@ -181,15 +217,13 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
 
     // Add small offset (200ms ahead) so lyrics feel more in sync
     const currentTime = currTime + 0.2;
-    const index = state.lyrics.synced.findLastIndex(
-      (l) => l.time <= currentTime
-    );
+    const index = findActiveLyricIndex(state.lyrics.synced, currentTime);
 
     // Only update if changed
-    if (index !== activeLyricIndex) {
+    if (index !== activeLyricIndexRef.current) {
       setActiveLyricIndex(index);
     }
-  }, [state.currentTime, state.lyrics, activeLyricIndex]);
+  }, [state.currentTime, state.lyrics]);
 
   // CORE: Auto-scroll when activeLyricIndex changes
   useEffect(() => {
@@ -211,18 +245,17 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
     if (now - lastScrollTimeRef.current > 80) {
       lastScrollTimeRef.current = now;
 
-      if (scrollTimeoutRef.current) {
-        cancelAnimationFrame(scrollTimeoutRef.current);
-      }
+      cancelPendingScroll();
 
       // Double RAF to ensure we run AFTER the layout/paint of the new class state
       scrollTimeoutRef.current = requestAnimationFrame(() => {
-         requestAnimationFrame(() => {
+         scrollTimeoutRef.current = requestAnimationFrame(() => {
+             scrollTimeoutRef.current = null;
              performScroll(activeLyricIndex, behavior);
          });
       });
     }
-  }, [activeLyricIndex, autoScrollEnabled, initialScrollDone, performScroll]);
+  }, [activeLyricIndex, autoScrollEnabled, initialScrollDone, cancelPendingScroll, performScroll]);
 
   // Reset states when song URL changes
   useEffect(() => {
@@ -262,6 +295,9 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
     return () => {
       if (scrollTimeoutRef.current) {
         cancelAnimationFrame(scrollTimeoutRef.current);
+      }
+      if (scrollAnimationRef.current) {
+        cancelAnimationFrame(scrollAnimationRef.current);
       }
       if (resumeTimeoutRef.current) {
         clearTimeout(resumeTimeoutRef.current);
