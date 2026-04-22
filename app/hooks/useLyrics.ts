@@ -24,6 +24,27 @@ const findActiveLyricIndex = (
   return result;
 };
 
+const resolveActiveLyricIndex = (
+  lines: SongState["lyrics"]["synced"],
+  currentTime: number,
+  currentIndex: number
+) => {
+  if (currentIndex === -1 && (!lines[0] || currentTime < lines[0].time)) {
+    return -1;
+  }
+
+  if (currentIndex >= 0 && currentIndex < lines.length) {
+    const currentLineTime = lines[currentIndex].time;
+    const nextLineTime = lines[currentIndex + 1]?.time ?? Infinity;
+
+    if (currentTime >= currentLineTime && currentTime < nextLineTime) {
+      return currentIndex;
+    }
+  }
+
+  return findActiveLyricIndex(lines, currentTime);
+};
+
 export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioElement>) => {
   const [activeLyricIndex, setActiveLyricIndex] = useState(-1);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
@@ -33,6 +54,8 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
 
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
   const lastScrollTimeRef = useRef(0);
+  const lyricsPaddingTopRef = useRef<number | null>(null);
+  const lyricOffsetTopCacheRef = useRef<number[]>([]);
   const scrollTimeoutRef = useRef<number | null>(null);
   const scrollAnimationRef = useRef<number | null>(null);
   const resumeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -76,12 +99,18 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
            const container = lyricsContainerRef.current;
            cancelPendingScroll();
            
-           const elementTop = activeElement.offsetTop;
+           let elementTop = lyricOffsetTopCacheRef.current[index];
+           if (elementTop === undefined) {
+              elementTop = activeElement.offsetTop;
+              lyricOffsetTopCacheRef.current[index] = elementTop;
+           }
            
-           // Get the ACTUAL computed padding-top from the container
-           // This ensures we use the exact same value that CSS is using
-           const computedStyle = window.getComputedStyle(container);
-           const paddingTop = parseFloat(computedStyle.paddingTop) || (window.innerHeight * 0.26);
+           let paddingTop = lyricsPaddingTopRef.current;
+           if (paddingTop === null) {
+              const computedStyle = window.getComputedStyle(container);
+              paddingTop = parseFloat(computedStyle.paddingTop) || (window.innerHeight * 0.26);
+              lyricsPaddingTopRef.current = paddingTop;
+           }
            
            // Target scroll position: Put element at the same position as padding-top
            const targetScroll = Math.max(0, elementTop - paddingTop);
@@ -125,6 +154,16 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
         }
      }
   }, [cancelPendingScroll]);
+
+  useEffect(() => {
+    const resetCachedLyricsLayout = () => {
+      lyricsPaddingTopRef.current = null;
+      lyricOffsetTopCacheRef.current = [];
+    };
+
+    window.addEventListener("resize", resetCachedLyricsLayout);
+    return () => window.removeEventListener("resize", resetCachedLyricsLayout);
+  }, []);
 
   // Exposed function to force scroll to active line
   const scrollToActiveLine = useCallback((instant = false) => {
@@ -203,7 +242,7 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
     // Force "start" state when at the very beginning
     // Only reset if we are essentially at 0. This allows lyrics at 0:01 to show.
     if (currTime < 0.2) {
-      if (activeLyricIndex !== -1) {
+      if (activeLyricIndexRef.current !== -1) {
         setActiveLyricIndex(-1);
         setInitialScrollDone(false);
         setAutoScrollEnabled(true);
@@ -217,7 +256,11 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
 
     // Add small offset (200ms ahead) so lyrics feel more in sync
     const currentTime = currTime + 0.2;
-    const index = findActiveLyricIndex(state.lyrics.synced, currentTime);
+    const index = resolveActiveLyricIndex(
+      state.lyrics.synced,
+      currentTime,
+      activeLyricIndexRef.current
+    );
 
     // Only update if changed
     if (index !== activeLyricIndexRef.current) {
@@ -271,6 +314,8 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
       setActiveLyricIndex(-1);
       setAutoScrollEnabled(true);
       setInitialScrollDone(false);
+      lyricsPaddingTopRef.current = null;
+      lyricOffsetTopCacheRef.current = [];
       lastScrollTimeRef.current = 0;
     }
   }, [state.url]);
@@ -287,6 +332,8 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
       
       setActiveLyricIndex(-1);
       setInitialScrollDone(false);
+      lyricsPaddingTopRef.current = null;
+      lyricOffsetTopCacheRef.current = [];
     }
   }, [state.lyrics]);
 

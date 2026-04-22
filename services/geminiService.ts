@@ -419,22 +419,25 @@ export const getLyrics = async (
     `Searching lyrics for: "${originalTitle}" by "${originalArtist}"`
   );
 
-  // 1. YouTube Music - prioritize first-party synced/plain lyrics
+  // 1. YouTube Music - only use first-party synced lyrics.
+  // If YouTube Music only returns plain lyrics, keep searching LRCLIB.
   let result = await fetchYouTubeMusicLyrics(originalTitle, originalArtist);
-  if (result.synced.length > 0 || result.plain.length > 0) {
-    console.log(
-      `[lyrics] Using YouTube Music (${result.isSynced ? "synced" : "plain"})`
-    );
+  if (result.synced.length > 0) {
+    console.log("[lyrics] Using YouTube Music (synced)");
     return result;
+  }
+  if (result.plain.length > 0) {
+    console.log("[lyrics] Skipping YouTube Music plain lyrics; trying LRCLIB");
   }
 
   if (cleanTitle !== originalTitle || cleanArtist !== originalArtist) {
     result = await fetchYouTubeMusicLyrics(cleanTitle, cleanArtist);
-    if (result.synced.length > 0 || result.plain.length > 0) {
-      console.log(
-        `[lyrics] Using YouTube Music cleaned (${result.isSynced ? "synced" : "plain"})`
-      );
+    if (result.synced.length > 0) {
+      console.log("[lyrics] Using YouTube Music cleaned (synced)");
       return result;
+    }
+    if (result.plain.length > 0) {
+      console.log("[lyrics] Skipping YouTube Music cleaned plain lyrics; trying LRCLIB");
     }
   }
 
