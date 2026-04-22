@@ -146,6 +146,7 @@ export const useAudio = (
       let finalMetadata: SongMetadata = {
         title: metadataTitle,
         artist: metadataArtist,
+        album: metadataAlbum,
         cover: undefined,
       };
 
@@ -181,7 +182,12 @@ export const useAudio = (
       });
 
       try {
-        const lyrics = await getLyrics(finalTitle, finalArtist);
+        const lyrics = await getLyrics(
+          finalTitle,
+          finalArtist,
+          finalMetadata.album || metadataAlbum,
+          finalMetadata.duration
+        );
         setState((prev) => {
           if (prev.currentSongIndex === index) {
             return { ...prev, lyrics };

@@ -24,7 +24,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Metadata
   getFileInfo: (filePath) => ipcRenderer.invoke('get-file-info', filePath),
   extractMetadata: (filePath) => ipcRenderer.invoke('extract-metadata', filePath),
-  fetchYouTubeMusicLyrics: (title, artist) => ipcRenderer.invoke('fetch-youtube-music-lyrics', { title, artist }),
+  fetchYouTubeMusicLyrics: (title, artist, album, duration) =>
+    ipcRenderer.invoke('fetch-youtube-music-lyrics', { title, artist, album, duration }),
 
   // Discord Rich Presence
   updateDiscordPresence: (data) => ipcRenderer.invoke('update-discord-presence', data),

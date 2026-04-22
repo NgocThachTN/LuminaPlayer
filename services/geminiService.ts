@@ -103,16 +103,20 @@ const fetchLrcLibLyrics = async (
 
 const fetchYouTubeMusicLyrics = async (
   title: string,
-  artist: string
+  artist: string,
+  album = "",
+  duration?: number
 ): Promise<LyricsResult> => {
   const emptyResult: LyricsResult = { synced: [], plain: [], isSynced: false };
 
   try {
-    console.log(`[youtube-music] Searching: title="${title}", artist="${artist}"`);
+    console.log(
+      `[youtube-music] Searching: title="${title}", artist="${artist}", album="${album}", duration=${duration || 0}`
+    );
 
     const data = window.electronAPI?.fetchYouTubeMusicLyrics
-      ? await window.electronAPI.fetchYouTubeMusicLyrics(title, artist)
-      : await fetchYouTubeMusicLyricsFromDevProxy(title, artist);
+      ? await window.electronAPI.fetchYouTubeMusicLyrics(title, artist, album, duration)
+      : await fetchYouTubeMusicLyricsFromDevProxy(title, artist, album, duration);
     const synced = Array.isArray(data?.synced)
       ? data.synced.filter((line) => Number.isFinite(line?.time) && line?.text)
       : [];
@@ -146,10 +150,14 @@ const fetchYouTubeMusicLyrics = async (
 
 const fetchYouTubeMusicLyricsFromDevProxy = async (
   title: string,
-  artist: string
+  artist: string,
+  album = "",
+  duration?: number
 ): Promise<{ lyrics: string; synced?: LyricLine[]; videoId?: string; title?: string; artist?: string } | null> => {
   try {
     const params = new URLSearchParams({ title, artist });
+    if (album) params.set("album", album);
+    if (Number.isFinite(duration)) params.set("duration", String(duration));
     const response = await fetch(`/api/youtube-music-lyrics?${params}`);
     if (!response.ok) return null;
     return await response.json();
@@ -407,7 +415,9 @@ const cleanSearchTerm = (term: string): string => {
 
 export const getLyrics = async (
   title: string,
-  artist: string
+  artist: string,
+  album = "",
+  duration?: number
 ): Promise<LyricsResult> => {
   const emptyResult: LyricsResult = { synced: [], plain: [], isSynced: false };
   const originalTitle = title.trim();
@@ -421,7 +431,7 @@ export const getLyrics = async (
 
   // 1. YouTube Music - only use first-party synced lyrics.
   // If YouTube Music only returns plain lyrics, keep searching LRCLIB.
-  let result = await fetchYouTubeMusicLyrics(originalTitle, originalArtist);
+  let result = await fetchYouTubeMusicLyrics(originalTitle, originalArtist, album, duration);
   if (result.synced.length > 0) {
     console.log("[lyrics] Using YouTube Music (synced)");
     return result;
@@ -431,7 +441,7 @@ export const getLyrics = async (
   }
 
   if (cleanTitle !== originalTitle || cleanArtist !== originalArtist) {
-    result = await fetchYouTubeMusicLyrics(cleanTitle, cleanArtist);
+    result = await fetchYouTubeMusicLyrics(cleanTitle, cleanArtist, album, duration);
     if (result.synced.length > 0) {
       console.log("[lyrics] Using YouTube Music cleaned (synced)");
       return result;

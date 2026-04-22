@@ -88,15 +88,18 @@ function stripJapaneseDecorations(value: string) {
     .trim();
 }
 
-function buildLyricsQueries(title: string, artist: string) {
+function buildLyricsQueries(title: string, artist: string, album = '') {
   const rawTitle = String(title || '').trim();
   const rawArtist = String(artist || '').trim();
+  const rawAlbum = String(album || '').trim();
   const japaneseTitle = stripJapaneseDecorations(rawTitle);
   const titleTokens = getLatinTokens(rawTitle);
   const hasNonLatinTitle = !!getNonLatinCompact(rawTitle);
   const compactTitle = normalizeLyricsComparable(rawTitle).replace(/\s+/g, '');
   const queries = [
     rawArtist && rawTitle ? `${rawArtist} ${rawTitle}` : rawTitle,
+    rawArtist && rawAlbum && rawTitle ? `${rawArtist} ${rawAlbum} ${rawTitle}` : '',
+    rawAlbum && rawTitle ? `${rawAlbum} ${rawTitle}` : '',
     rawArtist && japaneseTitle && japaneseTitle !== rawTitle ? `${rawArtist} ${japaneseTitle}` : '',
     rawArtist && titleTokens.length ? `${rawArtist} ${titleTokens.join(' ')}` : '',
     rawArtist && compactTitle && compactTitle !== normalizeLyricsComparable(rawTitle) ? `${rawArtist} ${compactTitle}` : '',
@@ -149,7 +152,10 @@ function textMatchesLoosely(wanted: string, candidate: string) {
 }
 
 function getTextSegments(runs: any[]) {
-  return getRunsText(runs).split('•').map((part) => part.trim()).filter(Boolean);
+  return getRunsText(runs)
+    .split(/\s*(?:\u2022|\u00b7)\s*/u)
+    .map((part) => part.trim())
+    .filter(Boolean);
 }
 
 function getRendererVideoId(renderer: any) {
@@ -161,6 +167,26 @@ function getRendererVideoId(renderer: any) {
       ?.runs?.find((run: any) => run?.navigationEndpoint?.watchEndpoint?.videoId)
       ?.navigationEndpoint?.watchEndpoint?.videoId ||
     null
+  );
+}
+
+function parseYouTubeMusicDurationText(value: any) {
+  const text = String(value || '').trim();
+  if (!/^\d{1,2}(?::\d{2}){1,2}$/.test(text)) return null;
+
+  const parts = text.split(':').map((part) => Number(part));
+  if (parts.some((part) => !Number.isFinite(part))) return null;
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  return parts[0] * 60 + parts[1];
+}
+
+function getRendererDuration(renderer: any, subtitleSegments: string[] = []) {
+  const fixedColumnText = getRunsText(
+    renderer?.fixedColumns?.[0]?.musicResponsiveListItemFixedColumnRenderer?.text?.runs
+  );
+  return (
+    parseYouTubeMusicDurationText(fixedColumnText) ??
+    parseYouTubeMusicDurationText(subtitleSegments[subtitleSegments.length - 1])
   );
 }
 
@@ -180,9 +206,11 @@ function collectSongCandidates(node: any, results: any[] = []) {
       renderer?.flexColumns?.[1]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs
     );
     const type = normalizeComparable(segments[0]);
+    const album = type === 'song' ? segments[2] || '' : '';
+    const duration = getRendererDuration(renderer, segments);
     const videoId = getRendererVideoId(renderer);
     if (title && videoId && (type === 'song' || type === 'video') && !results.some((r) => r.videoId === videoId)) {
-      results.push({ title, artist: segments[1] || '', type, videoId });
+      results.push({ title, artist: segments[1] || '', album, duration, type, videoId });
     }
   }
 
@@ -218,6 +246,17 @@ function collectLyricsTexts(node: any, results: string[] = []) {
 function collectTimedLyrics(node: any, results: any[][] = []) {
   if (!node || typeof node !== 'object') return results;
   if (Array.isArray(node)) {
+    if (
+      node.some((entry) =>
+        entry &&
+        typeof entry === 'object' &&
+        (entry.lyricLine || entry.text || entry.line) &&
+        (entry.cueRange || entry.startTimeMilliseconds || entry.startTimeMs || entry.startTimeSeconds)
+      )
+    ) {
+      results.push(node);
+    }
+
     for (const entry of node) collectTimedLyrics(entry, results);
     return results;
   }
@@ -231,28 +270,54 @@ function collectTimedLyrics(node: any, results: any[][] = []) {
   return results;
 }
 
+function parseYouTubeMusicTimeSeconds(value: any, unit = 'seconds') {
+  if (value === null || value === undefined) return null;
+
+  if (typeof value === 'string' && value.includes(':')) {
+    const parts = value.split(':').map((part) => Number(part));
+    if (parts.some((part) => !Number.isFinite(part))) return null;
+    if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    if (parts.length === 2) return parts[0] * 60 + parts[1];
+  }
+
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return null;
+  return unit === 'milliseconds' ? numeric / 1000 : numeric;
+}
+
 function parseTimedLyrics(timedData: any[]) {
   if (!Array.isArray(timedData)) return [];
 
   return timedData
     .map((entry) => {
-      const text = String(entry?.lyricLine || '').trim();
-      const startMs = Number(entry?.cueRange?.startTimeMilliseconds);
-      if (!text || !Number.isFinite(startMs)) return null;
-      return { time: startMs / 1000, text };
+      const text = String(
+        entry?.lyricLine ||
+        entry?.line ||
+        entry?.text?.runs?.map((run: any) => run?.text || '').join('') ||
+        entry?.text ||
+        ''
+      ).trim();
+      const time =
+        parseYouTubeMusicTimeSeconds(entry?.cueRange?.startTimeMilliseconds, 'milliseconds') ??
+        parseYouTubeMusicTimeSeconds(entry?.startTimeMilliseconds, 'milliseconds') ??
+        parseYouTubeMusicTimeSeconds(entry?.startTimeMs, 'milliseconds') ??
+        parseYouTubeMusicTimeSeconds(entry?.cueRange?.startTimeSeconds) ??
+        parseYouTubeMusicTimeSeconds(entry?.startTimeSeconds) ??
+        parseYouTubeMusicTimeSeconds(entry?.startTime);
+      if (!text || time === null) return null;
+      return { time, text };
     })
     .filter(Boolean)
     .sort((a: any, b: any) => a.time - b.time);
 }
 
-async function fetchYouTubeMusicEndpoint(endpoint: 'search' | 'next' | 'browse', body: any, referer: string, mobile = false) {
+async function fetchYouTubeMusicEndpoint(endpoint: 'search' | 'next' | 'browse', body: any, referer: string, clientOverride: any = null) {
   const config = await getYouTubeMusicConfig();
   const context = JSON.parse(JSON.stringify(config.context));
   if (context?.client) {
     context.client.originalUrl = referer;
-    if (mobile) {
-      context.client.clientName = 'ANDROID_MUSIC';
-      context.client.clientVersion = '7.21.50';
+    if (clientOverride) {
+      Object.assign(context.client, clientOverride);
     }
   }
 
@@ -278,56 +343,116 @@ async function fetchYouTubeMusicEndpoint(endpoint: 'search' | 'next' | 'browse',
   return response.json();
 }
 
-async function fetchYouTubeMusicLyrics(title: string, artist: string) {
-  const queries = buildLyricsQueries(title, artist);
+async function fetchYouTubeMusicLyrics(title: string, artist: string, album = '', duration?: number) {
+  const queries = buildLyricsQueries(title, artist, album);
+  const wantedArtist = normalizeLyricsComparable(artist);
+  const artistIsUnknown =
+    !wantedArtist ||
+    wantedArtist === 'unknown artist' ||
+    wantedArtist === 'unknown';
+  let plainFallback: any = null;
+
+  const scoreCandidate = (candidate: any) => {
+    const wantedTitle = normalizeLyricsComparable(title);
+    const resultTitle = normalizeLyricsComparable(candidate?.title);
+    const wantedAlbum = normalizeLyricsComparable(album);
+    const resultAlbum = normalizeLyricsComparable(candidate?.album);
+    const titleCompact = wantedTitle.replace(/\s+/g, '');
+    const resultCompact = resultTitle.replace(/\s+/g, '');
+    let score = 0;
+
+    if (candidate?.type === 'song') score += 50;
+    if (candidate?.type === 'video') score += 10;
+    if (wantedTitle && resultTitle === wantedTitle) score += 80;
+    else if (titleCompact && resultCompact === titleCompact) score += 70;
+    else if (resultTitle.includes(wantedTitle) || wantedTitle.includes(resultTitle)) score += 35;
+    if (textMatchesLoosely(artist, candidate?.artist)) score += 30;
+    if (
+      wantedAlbum &&
+      resultAlbum &&
+      (resultAlbum.includes(wantedAlbum) || wantedAlbum.includes(resultAlbum))
+    ) {
+      score += 25;
+    }
+    if (Number.isFinite(duration) && Number(duration) > 0 && Number.isFinite(candidate?.duration)) {
+      const delta = Math.abs(Number(duration) - Number(candidate.duration));
+      if (delta <= 2) score += 70;
+      else if (delta <= 5) score += 45;
+      else if (delta <= 10) score += 20;
+      else if (delta >= 25) score -= 35;
+    }
+
+    return score;
+  };
 
   for (const query of queries) {
-    const searchUrl = `https://music.youtube.com/search?q=${encodeURIComponent(query)}`;
-    const searchData = await fetchYouTubeMusicEndpoint('search', { query }, searchUrl);
-    const candidates = collectSongCandidates(searchData);
-    const ordered = candidates
-      .filter((candidate) => {
-        return textMatchesLoosely(title, candidate.title) &&
-          textMatchesLoosely(artist, candidate.artist);
-      });
+    try {
+      const searchUrl = `https://music.youtube.com/search?q=${encodeURIComponent(query)}`;
+      const searchData = await fetchYouTubeMusicEndpoint('search', { query }, searchUrl);
+      const candidates = collectSongCandidates(searchData);
+      const ordered = candidates
+        .filter((candidate) => {
+          return textMatchesLoosely(title, candidate.title) &&
+            (artistIsUnknown || textMatchesLoosely(artist, candidate.artist));
+        })
+        .sort((a, b) => scoreCandidate(b) - scoreCandidate(a));
 
-    for (const candidate of ordered.slice(0, 5)) {
-      const watchUrl = `https://music.youtube.com/watch?v=${candidate.videoId}`;
-      const nextData = await fetchYouTubeMusicEndpoint('next', { videoId: candidate.videoId }, watchUrl);
-      const lyricsEndpoint = collectBrowseEndpoints(nextData)
-        .find((endpoint) => String(endpoint.browseId || '').startsWith('MPLY'));
-      if (!lyricsEndpoint?.browseId) continue;
+      for (const candidate of ordered.slice(0, 5)) {
+        const watchUrl = `https://music.youtube.com/watch?v=${candidate.videoId}`;
+        const nextData = await fetchYouTubeMusicEndpoint('next', { videoId: candidate.videoId }, watchUrl);
+        const lyricsEndpoint = collectBrowseEndpoints(nextData)
+          .find((endpoint) => String(endpoint.browseId || '').startsWith('MPLY'));
+        if (!lyricsEndpoint?.browseId) continue;
 
-      const timedBrowseData = await fetchYouTubeMusicEndpoint(
-        'browse',
-        { browseId: lyricsEndpoint.browseId, params: lyricsEndpoint.params },
-        watchUrl,
-        true
-      );
-      const synced = collectTimedLyrics(timedBrowseData)
-        .map(parseTimedLyrics)
-        .find((lyrics) => lyrics.length > 0);
-      if (synced?.length) {
-        return {
-          lyrics: synced.map((line: any) => line.text).join('\n'),
-          synced,
-          videoId: candidate.videoId,
-          title: candidate.title,
-          artist: candidate.artist,
-        };
+        let synced: any[] | undefined;
+        const mobileClients = [
+          { clientName: 'ANDROID_MUSIC', clientVersion: '7.21.50' },
+          { clientName: 'IOS_MUSIC', clientVersion: '7.21.50' },
+        ];
+
+        for (const client of mobileClients) {
+          try {
+            const timedBrowseData = await fetchYouTubeMusicEndpoint(
+              'browse',
+              { browseId: lyricsEndpoint.browseId, params: lyricsEndpoint.params },
+              watchUrl,
+              client
+            );
+            synced = collectTimedLyrics(timedBrowseData)
+              .map(parseTimedLyrics)
+              .find((lyrics) => lyrics.length > 0);
+            if (synced?.length) break;
+          } catch (error) {
+            console.warn(`YouTube Music timed lyrics failed (${client.clientName}):`, error);
+          }
+        }
+
+        if (synced?.length) {
+          return {
+            lyrics: synced.map((line: any) => line.text).join('\n'),
+            synced,
+            videoId: candidate.videoId,
+            title: candidate.title,
+            artist: candidate.artist,
+          };
+        }
+
+        const browseData = await fetchYouTubeMusicEndpoint(
+          'browse',
+          { browseId: lyricsEndpoint.browseId, params: lyricsEndpoint.params },
+          watchUrl
+        );
+        const lyrics = collectLyricsTexts(browseData).sort((a, b) => b.length - a.length)[0];
+        if (lyrics) {
+          plainFallback ??= { lyrics, videoId: candidate.videoId, title: candidate.title, artist: candidate.artist };
+        }
       }
-
-      const browseData = await fetchYouTubeMusicEndpoint(
-        'browse',
-        { browseId: lyricsEndpoint.browseId, params: lyricsEndpoint.params },
-        watchUrl
-      );
-      const lyrics = collectLyricsTexts(browseData).sort((a, b) => b.length - a.length)[0];
-      if (lyrics) return { lyrics, videoId: candidate.videoId, title: candidate.title, artist: candidate.artist };
+    } catch (error) {
+      console.warn(`YouTube Music lyrics lookup failed (${query}):`, error);
     }
   }
 
-  return null;
+  return plainFallback;
 }
 
 function youtubeMusicLyricsDevProxy() {
@@ -339,6 +464,9 @@ function youtubeMusicLyricsDevProxy() {
           const requestUrl = new URL(req.url || '', 'http://localhost');
           const title = requestUrl.searchParams.get('title') || '';
           const artist = requestUrl.searchParams.get('artist') || '';
+          const album = requestUrl.searchParams.get('album') || '';
+          const durationParam = requestUrl.searchParams.get('duration') || '';
+          const duration = durationParam ? Number(durationParam) : undefined;
 
           if (!title || !artist) {
             res.statusCode = 400;
@@ -346,7 +474,7 @@ function youtubeMusicLyricsDevProxy() {
             return;
           }
 
-          const lyrics = await fetchYouTubeMusicLyrics(title, artist);
+          const lyrics = await fetchYouTubeMusicLyrics(title, artist, album, duration);
           if (!lyrics) {
             res.statusCode = 404;
             res.end(JSON.stringify({ error: 'Lyrics not found' }));

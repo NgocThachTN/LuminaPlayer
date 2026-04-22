@@ -55,6 +55,7 @@ export const extractMetadata = async (file: File): Promise<SongMetadata> => {
       artist: artist || "Unknown Artist",
       album: album || "Unknown Album",
       cover,
+      duration: metadata.format.duration,
       year: common.year
     };
   } catch (e) {
@@ -65,7 +66,8 @@ export const extractMetadata = async (file: File): Promise<SongMetadata> => {
       title: filename,
       artist: "Unknown Artist",
       album: "Unknown Album",
-      cover: undefined
+      cover: undefined,
+      duration: 0
     };
   }
 };
