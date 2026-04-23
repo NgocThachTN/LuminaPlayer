@@ -15,6 +15,14 @@ export interface PlaylistItem {
   file?: File;
   path?: string;
   name: string;
+  relativeFolder?: string;
+  playlistName?: string;
   metadata?: PlaylistItemMetadata;
+}
+
+export interface FolderPlaylistInfo {
+  id: string;
+  name: string;
+  trackIndices: number[];
 }
 

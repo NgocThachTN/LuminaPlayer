@@ -1614,20 +1614,66 @@ const audioExtensions = [
   ".wma",
 ];
 
+function formatPlaylistName(relativeFolder) {
+  if (!relativeFolder || relativeFolder === ".") {
+    return "Library Root";
+  }
+
+  return relativeFolder
+    .split(path.sep)
+    .filter(Boolean)
+    .join(" / ");
+}
+
 function readAudioFilesFromFolder(folderPath) {
   try {
-    const files = fs.readdirSync(folderPath);
-    return files
-      .filter((file) => {
-        const ext = path.extname(file).toLowerCase();
-        return audioExtensions.includes(ext);
-      })
-      .map((file) => path.join(folderPath, file))
-      .sort();
+    const audioFiles = [];
+    const foldersToScan = [folderPath];
+
+    while (foldersToScan.length > 0) {
+      const currentFolder = foldersToScan.pop();
+      const entries = fs.readdirSync(currentFolder, { withFileTypes: true });
+
+      for (const entry of entries) {
+        const fullPath = path.join(currentFolder, entry.name);
+
+        if (entry.isDirectory()) {
+          foldersToScan.push(fullPath);
+          continue;
+        }
+
+        // Avoid following symlinks/junctions and only collect actual audio files.
+        if (!entry.isFile()) continue;
+
+        const ext = path.extname(entry.name).toLowerCase();
+        if (audioExtensions.includes(ext)) {
+          audioFiles.push(fullPath);
+        }
+      }
+    }
+
+    return audioFiles.sort((a, b) => a.localeCompare(b));
   } catch (e) {
     console.error("Error reading folder:", e);
     return [];
   }
+}
+
+function scanMusicFolder(folderPath) {
+  return readAudioFilesFromFolder(folderPath).map((filePath) => {
+    const relativeFolderPath = path.relative(folderPath, path.dirname(filePath));
+    const relativeFolder =
+      !relativeFolderPath || relativeFolderPath === "."
+        ? undefined
+        : relativeFolderPath;
+
+    return {
+      path: filePath,
+      name: path.basename(filePath),
+      relativeFolder,
+      playlistName: formatPlaylistName(relativeFolder),
+    };
+  });
 }
 
 let mainWindow;
@@ -1777,6 +1823,8 @@ ipcMain.handle("save-playlist", (event, items) => {
     return {
       path: item.path,
       name: item.name,
+      relativeFolder: item.relativeFolder,
+      playlistName: item.playlistName,
       metadata: item.metadata // Now includes 'cover' as string string path
     };
   });
@@ -1956,7 +2004,7 @@ ipcMain.handle("open-folder-dialog", async () => {
   }
 
   const folderPath = result.filePaths[0];
-  const audioFiles = readAudioFilesFromFolder(folderPath);
+  const audioFiles = scanMusicFolder(folderPath);
 
   const config = getConfig();
   config.musicFolderPath = folderPath;
@@ -1986,7 +2034,7 @@ ipcMain.handle("refresh-music-folder", async () => {
   config.musicFolderPath = folderPath;
   saveConfig(config);
 
-  return readAudioFilesFromFolder(folderPath);
+  return scanMusicFolder(folderPath);
 });
 
 // Open file dialog and return audio file paths

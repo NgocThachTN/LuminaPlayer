@@ -200,7 +200,9 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
 
   const [coverPalette, setCoverPalette] = React.useState<string[]>([]);
   const [showQueue, setShowQueue] = React.useState(false);
+  const [isFullscreenTransitioning, setIsFullscreenTransitioning] = React.useState(false);
   const isSidePanelOpen = showLyrics || showQueue;
+  const hasMountedFullscreenRef = React.useRef(false);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -256,14 +258,28 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
     }
   }, [showLyrics]);
 
+  React.useEffect(() => {
+    if (!hasMountedFullscreenRef.current) {
+      hasMountedFullscreenRef.current = true;
+      return;
+    }
+
+    setIsFullscreenTransitioning(true);
+    const timer = window.setTimeout(() => {
+      setIsFullscreenTransitioning(false);
+    }, 760);
+
+    return () => window.clearTimeout(timer);
+  }, [isFullScreenPlayer]);
+
   return (
     <>
     <div 
-      className={`fixed inset-0 z-[60] flex flex-col md:flex-row transition-transform duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] ${isFullScreenPlayer ? 'translate-y-0' : 'translate-y-full'}`}
+      className={`fixed inset-0 z-[60] flex flex-col md:flex-row transform-gpu will-change-transform transition-transform duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] ${isFullScreenPlayer ? 'translate-y-0' : 'translate-y-full'}`}
       style={playerBackgroundStyle}
     >
        <div 
-         className={`lumina-ambient-background absolute inset-0 z-0 overflow-hidden ${state.isPlaying ? 'lumina-ambient-playing' : ''}`}
+         className={`lumina-ambient-background absolute inset-0 z-0 overflow-hidden ${state.isPlaying ? 'lumina-ambient-playing' : ''} ${isFullscreenTransitioning ? 'lumina-ambient-transitioning' : ''}`}
          aria-hidden="true"
        >
          {state.metadata.cover && (
@@ -296,8 +312,8 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
               setTimeout(() => {
                 setIsRestoringLayout(false);
               }, 700);
-           }
-         }}
+            }
+          }}
          className="absolute top-6 left-6 z-50 p-2 text-white/50 hover:text-white bg-black/20 hover:bg-black/40 backdrop-blur-md rounded-full transition-all"
          title="Collapse to Mini Player"
        >

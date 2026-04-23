@@ -2,6 +2,7 @@
 import { useState, useMemo, useEffect, useTransition } from "react";
 import { 
   PlaylistItem, 
+  FolderPlaylistInfo,
   AlbumInfo, 
   ArtistInfo, 
   PlaylistItemMetadata,
@@ -16,7 +17,7 @@ export const useLibrary = (
   state: SongState,
   setState: React.Dispatch<React.SetStateAction<SongState>>,
   playSongFromItem: (item: PlaylistItem, index: number) => Promise<void>,
-  onImportComplete?: () => void
+  onLibraryActionComplete?: (message: string) => void
 ) => {
   const [playlistItems, setPlaylistItems] = useState<PlaylistItem[]>([]);
   const [metadataLoaded, setMetadataLoaded] = useState(false);
@@ -30,6 +31,42 @@ export const useLibrary = (
       /\w\S*/g,
       (txt) => txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase()
     );
+  };
+
+  const formatPlaylistName = (relativeFolder?: string) => {
+    if (!relativeFolder) return "Library Root";
+    return relativeFolder
+      .split(/[\\/]+/)
+      .filter(Boolean)
+      .join(" / ");
+  };
+
+  const getRelativeFolderFromWebkitPath = (file: File) => {
+    const relativePath = ((file as any).webkitRelativePath || "").trim();
+    if (!relativePath) return undefined;
+
+    const segments = relativePath.split("/").filter(Boolean);
+    if (segments.length <= 2) return undefined;
+
+    return segments.slice(1, -1).join("/");
+  };
+
+  const normalizeImportedItem = (rawItem: string | Partial<PlaylistItem>) => {
+    if (typeof rawItem === "string") {
+      return {
+        path: rawItem,
+        name: rawItem.split(/[/\\]/).pop() || rawItem,
+      } satisfies PlaylistItem;
+    }
+
+    const relativeFolder = rawItem.relativeFolder;
+    return {
+      path: rawItem.path,
+      name: rawItem.name || rawItem.path?.split(/[/\\]/).pop() || "Unknown Track",
+      relativeFolder,
+      playlistName: rawItem.playlistName || formatPlaylistName(relativeFolder),
+      metadata: rawItem.metadata,
+    } satisfies PlaylistItem;
   };
 
   const preloadDiscordCover = (metadata?: PlaylistItemMetadata) => {
@@ -78,7 +115,7 @@ export const useLibrary = (
                 });
               } else {
                  // Restore persisted metadata
-                 items.push(item);
+                 items.push(normalizeImportedItem(item));
               }
             }
           }
@@ -272,6 +309,31 @@ export const useLibrary = (
     );
   }, [playlistItems]);
 
+  const folderPlaylists = useMemo<FolderPlaylistInfo[]>(() => {
+    const folderMap = new Map<string, FolderPlaylistInfo>();
+
+    playlistItems.forEach((item, idx) => {
+      if (!item.relativeFolder) return;
+
+      const playlistId = item.relativeFolder;
+      const playlistName = item.playlistName || formatPlaylistName(item.relativeFolder);
+      const existing = folderMap.get(playlistId);
+
+      if (existing) {
+        existing.trackIndices.push(idx);
+        return;
+      }
+
+      folderMap.set(playlistId, {
+        id: playlistId,
+        name: playlistName,
+        trackIndices: [idx],
+      });
+    });
+
+    return Array.from(folderMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [playlistItems]);
+
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -304,7 +366,7 @@ export const useLibrary = (
     loadAllMetadata(items);
 
     await playSongFromItem(items[0], 0);
-    onImportComplete?.();
+    onLibraryActionComplete?.("Track Imported Successfully");
   };
 
   const handleFolderChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -322,6 +384,8 @@ export const useLibrary = (
       file,
       path: (file as any).path || "",
       name: file.name,
+      relativeFolder: getRelativeFolderFromWebkitPath(file),
+      playlistName: formatPlaylistName(getRelativeFolderFromWebkitPath(file)),
     }));
 
     setPlaylistItems(items);
@@ -342,7 +406,7 @@ export const useLibrary = (
 
     // Load metadata in background
     loadAllMetadata(items);
-    onImportComplete?.();
+    onLibraryActionComplete?.("Folder Imported Successfully");
   };
 
   // Electron: Open folder using native dialog
@@ -350,13 +414,12 @@ export const useLibrary = (
     const electronAPI = (window as any).electronAPI;
     if (!electronAPI) return;
 
-    const filePaths = await electronAPI.openFolderDialog();
-    if (filePaths.length === 0) return;
+    const importedItems = await electronAPI.openFolderDialog();
+    if (importedItems.length === 0) return;
 
-    const items: PlaylistItem[] = filePaths.map((p: string) => ({
-      path: p,
-      name: p.split(/[/\\]/).pop() || p,
-    }));
+    const items: PlaylistItem[] = importedItems.map((item: string | Partial<PlaylistItem>) =>
+      normalizeImportedItem(item)
+    );
 
     setPlaylistItems(items);
     setState((prev) => ({
@@ -366,9 +429,10 @@ export const useLibrary = (
     }));
 
     // Save to Electron storage
-    await electronAPI.savePlaylist(filePaths);
+    await electronAPI.savePlaylist(items);
     // Load metadata in background
     loadAllMetadata(items);
+    onLibraryActionComplete?.("Folder Imported Successfully");
   };
 
   const refreshElectronFolder = async () => {
@@ -378,8 +442,8 @@ export const useLibrary = (
     setIsRefreshingLibrary(true);
 
     try {
-      const filePaths = await electronAPI.refreshMusicFolder();
-      if (!filePaths || filePaths.length === 0) return;
+      const importedItems = await electronAPI.refreshMusicFolder();
+      if (!importedItems || importedItems.length === 0) return;
 
       const previousByPath = new Map(
         playlistItems
@@ -390,11 +454,14 @@ export const useLibrary = (
         ? playlistItems[state.currentSongIndex]?.path
         : "";
 
-      const items: PlaylistItem[] = filePaths.map((p: string) => {
-        const previousItem = previousByPath.get(p);
+      const items: PlaylistItem[] = importedItems.map((rawItem: string | Partial<PlaylistItem>) => {
+        const normalizedItem = normalizeImportedItem(rawItem);
+        const previousItem = normalizedItem.path ? previousByPath.get(normalizedItem.path) : undefined;
         return {
-          path: p,
-          name: previousItem?.name || p.split(/[/\\]/).pop() || p,
+          path: normalizedItem.path,
+          name: previousItem?.name || normalizedItem.name,
+          relativeFolder: normalizedItem.relativeFolder,
+          playlistName: normalizedItem.playlistName,
           metadata: previousItem?.metadata,
         };
       });
@@ -411,6 +478,7 @@ export const useLibrary = (
 
       await electronAPI.savePlaylist(items);
       loadAllMetadata(items);
+      onLibraryActionComplete?.("Library Refreshed");
     } finally {
       setIsRefreshingLibrary(false);
     }
@@ -444,11 +512,13 @@ export const useLibrary = (
 
     // Auto play first track
     await playSongFromItem(items[0], 0);
+    onLibraryActionComplete?.("Track Imported Successfully");
   };
 
   return {
     playlistItems,
     setPlaylistItems,
+    folderPlaylists,
     albums,
     artists,
     metadataLoaded,

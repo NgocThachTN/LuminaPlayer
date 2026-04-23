@@ -267,8 +267,8 @@
         /* Glassmorphism header */
         .glass-header {
             background: rgba(5, 5, 5, 0.2);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
         }
         /* Stagger animation for list items */
         @keyframes fadeSlideIn {
@@ -325,6 +325,8 @@
             background:
                 linear-gradient(125deg, var(--cover-bg-shadow), var(--cover-bg-base) 42%, var(--cover-bg-primary));
             isolation: isolate;
+            contain: paint;
+            transform: translateZ(0);
         }
         .lumina-cover-field,
         .lumina-cover-wash {
@@ -336,10 +338,11 @@
             pointer-events: none;
             user-select: none;
             will-change: transform, opacity;
+            backface-visibility: hidden;
         }
         .lumina-cover-field {
             opacity: 0.58;
-            filter: blur(96px) saturate(2.15) brightness(0.72);
+            filter: blur(82px) saturate(2.05) brightness(0.72);
             transform: scale(1.22) translate3d(-1.5%, -1%, 0);
             animation: lumina-cover-drift 24s ease-in-out infinite alternate;
             animation-play-state: paused;
@@ -350,7 +353,7 @@
             height: 156%;
             opacity: 0.34;
             mix-blend-mode: screen;
-            filter: blur(150px) saturate(2.65) contrast(1.08);
+            filter: blur(118px) saturate(2.4) contrast(1.06);
             transform: scale(1.18) rotate(4deg) translate3d(2%, 1%, 0);
             animation: lumina-cover-wash 32s ease-in-out infinite alternate;
             animation-play-state: paused;
@@ -363,13 +366,14 @@
                 radial-gradient(95% 82% at 82% 24%, var(--cover-bg-secondary) 0%, transparent 62%),
                 radial-gradient(110% 90% at 48% 92%, var(--cover-bg-accent) 0%, transparent 58%),
                 linear-gradient(140deg, var(--cover-bg-shadow), var(--cover-bg-base) 46%, var(--cover-bg-primary));
-            filter: blur(18px) saturate(1.35);
+            filter: blur(12px) saturate(1.28);
             opacity: 0.72;
             mix-blend-mode: overlay;
             transform: scale(1.05);
             animation: lumina-mesh-flow 28s ease-in-out infinite alternate;
             animation-play-state: paused;
             will-change: transform, opacity;
+            backface-visibility: hidden;
         }
         .lumina-ambient-depth {
             position: absolute;
@@ -383,7 +387,7 @@
             position: absolute;
             inset: 0;
             pointer-events: none;
-            opacity: 0.04;
+            opacity: 0.028;
             background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
             background-repeat: repeat;
             background-size: 150px 150px;
@@ -400,6 +404,17 @@
         .lumina-ambient-playing .lumina-cover-wash,
         .lumina-ambient-playing .lumina-ambient-mesh {
             animation-play-state: running;
+        }
+        .lumina-ambient-transitioning .lumina-cover-field,
+        .lumina-ambient-transitioning .lumina-cover-wash,
+        .lumina-ambient-transitioning .lumina-ambient-mesh {
+            animation-play-state: paused !important;
+        }
+        .lumina-ambient-transitioning .lumina-cover-wash {
+            opacity: 0.26;
+        }
+        .lumina-ambient-transitioning .lumina-ambient-grain {
+            opacity: 0.016;
         }
         @keyframes lumina-cover-drift {
             0% {

@@ -7,10 +7,10 @@ interface FooterPlayerProps {
   audioInfo: { format: string; bitrate: number | null };
   playlistCount: number;
   isFullScreenPlayer: boolean;
-  setIsFullScreenPlayer: (v: boolean) => void;
-  openLyricsFullscreen: () => void;
-  exitLyricsFullscreen: () => void;
   isDocumentFullscreen: boolean;
+  setIsFullScreenPlayer: (v: boolean) => void;
+  openPlayerWithLyrics: () => void;
+  exitDocumentFullscreen: () => void;
   playPrevious: () => void;
   playNext: () => void;
   togglePlay: () => void;
@@ -25,10 +25,10 @@ const FooterPlayerBase: React.FC<FooterPlayerProps> = ({
   audioInfo,
   playlistCount,
   isFullScreenPlayer,
-  setIsFullScreenPlayer,
-  openLyricsFullscreen,
-  exitLyricsFullscreen,
   isDocumentFullscreen,
+  setIsFullScreenPlayer,
+  openPlayerWithLyrics,
+  exitDocumentFullscreen,
   playPrevious,
   playNext,
   togglePlay,
@@ -50,7 +50,7 @@ const FooterPlayerBase: React.FC<FooterPlayerProps> = ({
          if ((e.target as HTMLElement).closest('button') || (e.target as HTMLElement).closest('input')) return;
          setIsFullScreenPlayer(true);
       }}
-      className={`w-full border-t border-white/10 flex flex-col glass-header bg-black/40 backdrop-blur-xl z-[70] transition-all duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] cursor-pointer hover:bg-black/50 ${isFullScreenPlayer ? '-translate-y-[100vh] opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'}`}
+      className={`w-full border-t border-white/10 flex flex-col glass-header bg-black/40 backdrop-blur-xl z-[70] transform-gpu will-change-transform transition-[transform,opacity,background-color] duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] cursor-pointer hover:bg-black/50 ${isFullScreenPlayer ? '-translate-y-[100vh] opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'}`}
     >
       {/* Progress Bar - Top of footer */}
       <div className="w-full px-0 -mt-1 h-2 group relative cursor-pointer">
@@ -207,13 +207,15 @@ const FooterPlayerBase: React.FC<FooterPlayerProps> = ({
             onClick={(e) => {
               e.stopPropagation();
               if (isDocumentFullscreen) {
-                exitLyricsFullscreen();
-              } else {
-                openLyricsFullscreen();
+                exitDocumentFullscreen();
+                setIsFullScreenPlayer(false);
+                return;
               }
+
+              openPlayerWithLyrics();
             }}
             className="text-white/50 hover:text-white transition-colors p-2"
-            title={isDocumentFullscreen ? "Exit Fullscreen" : "Fullscreen Lyrics"}
+            title={isDocumentFullscreen ? "Exit Fullscreen" : "Open Fullscreen Lyrics"}
           >
             {isDocumentFullscreen ? (
               <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M7 7H3V5h6v6H7V7zm10 0v4h-2V5h6v2h-4zM7 17v-4h2v6H3v-2h4zm10 0h4v2h-6v-6h2v4z"/></svg>

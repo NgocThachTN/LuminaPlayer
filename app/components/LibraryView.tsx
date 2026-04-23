@@ -1,13 +1,14 @@
 
 import React, { useRef, useEffect, memo, useCallback, useState, useMemo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { ViewMode, PlaylistItem, AlbumInfo, ArtistInfo, SongState } from '../types';
+import { ViewMode, PlaylistItem, FolderPlaylistInfo, AlbumInfo, ArtistInfo, SongState } from '../types';
 import { LazyImage } from '../../components/LazyImage';
 
 interface LibraryViewProps {
   viewMode: ViewMode;
   setViewMode: (mode: ViewMode) => void;
   playlistItems: PlaylistItem[];
+  folderPlaylists: FolderPlaylistInfo[];
   albums: AlbumInfo[];
   artists: ArtistInfo[];
   metadataLoaded: boolean;
@@ -45,6 +46,7 @@ const LibraryViewBase: React.FC<LibraryViewProps> = ({
   viewMode,
   setViewMode,
   playlistItems,
+  folderPlaylists,
   albums,
   artists,
   metadataLoaded,
@@ -73,6 +75,8 @@ const LibraryViewBase: React.FC<LibraryViewProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [sortMode, setSortMode] = useState<'default' | 'alpha' | 'alpha-desc' | 'year' | 'year-desc'>('default');
   const [showSortMenu, setShowSortMenu] = useState(false);
+  const [selectedFolderPlaylistId, setSelectedFolderPlaylistId] = useState<string>('all');
+  const [showFolderPlaylistMenu, setShowFolderPlaylistMenu] = useState(false);
 
   const playlistContainerRef = useRef<HTMLDivElement>(null);
   const albumsContainerRef = useRef<HTMLDivElement>(null);
@@ -144,11 +148,55 @@ const LibraryViewBase: React.FC<LibraryViewProps> = ({
 
   // Playlist items for virtualization
   const playlistDataRaw = React.useMemo(() => 
-    playlistItems.length > 0
-      ? playlistItems
-      : state.playlist.map((f) => ({ file: f, name: f.name })),
-    [playlistItems, state.playlist]
+    {
+      const source =
+        playlistItems.length > 0
+          ? playlistItems
+          : state.playlist.map((f) => ({ file: f, name: f.name }));
+
+      if (selectedFolderPlaylistId === 'all' || playlistItems.length === 0) {
+        return source;
+      }
+
+      const selectedPlaylist = folderPlaylists.find((playlist) => playlist.id === selectedFolderPlaylistId);
+      if (!selectedPlaylist) {
+        return source;
+      }
+
+      const allowedTrackIndices = new Set(selectedPlaylist.trackIndices);
+      return source.filter((_, index) => allowedTrackIndices.has(index));
+    },
+    [playlistItems, state.playlist, folderPlaylists, selectedFolderPlaylistId]
   );
+
+  const selectedFolderPlaylist = useMemo(
+    () => folderPlaylists.find((playlist) => playlist.id === selectedFolderPlaylistId) || null,
+    [folderPlaylists, selectedFolderPlaylistId]
+  );
+
+  useEffect(() => {
+    if (selectedFolderPlaylistId === 'all') return;
+    if (!folderPlaylists.some((playlist) => playlist.id === selectedFolderPlaylistId)) {
+      setSelectedFolderPlaylistId('all');
+    }
+  }, [folderPlaylists, selectedFolderPlaylistId]);
+
+  const handlePlaylistItemSelect = useCallback((item: PlaylistItem, fallbackIndex: number) => {
+    if (playlistItems.length === 0) {
+      handleSongSelect(fallbackIndex);
+      return;
+    }
+
+    const contextItems = selectedFolderPlaylist
+      ? selectedFolderPlaylist.trackIndices.map((idx) => playlistItems[idx]).filter(Boolean)
+      : playlistItems;
+
+    onPlayContext(item, fallbackIndex, {
+      type: 'playlist',
+      id: selectedFolderPlaylist?.id,
+      items: contextItems,
+    });
+  }, [handleSongSelect, onPlayContext, playlistItems, selectedFolderPlaylist]);
 
   // Filtered & Sorted playlist data
   const playlistData = useMemo(() => {
@@ -446,101 +494,192 @@ const LibraryViewBase: React.FC<LibraryViewProps> = ({
 
             {/* Search & Sort Toolbar - only for playlist (fixed header) */}
             {viewMode === 'playlist' && (
-              <div className="w-full px-8 md:px-16 py-1 flex items-center justify-end gap-3 shrink-0">
-                {/* Search Input */}
-                <div className="relative w-64">
-                  <input
-                    type="text"
-                    placeholder={viewMode === 'playlist' ? 'Search songs...' : viewMode === 'albums' ? 'Search albums...' : 'Search artists...'}
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 pl-10 text-sm text-white placeholder-white/30 focus:outline-none focus:border-white/30 transition-colors"
-                  />
-                  <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
-                  {searchQuery && (
-                    <button 
-                      onClick={() => setSearchQuery('')}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white transition-colors"
+              <div className="w-full px-8 md:px-16 py-1 flex items-center justify-between gap-4 shrink-0">
+                {folderPlaylists.length > 0 ? (
+                  <div className="relative shrink-0">
+                    <button
+                      onClick={() => {
+                        setShowFolderPlaylistMenu(!showFolderPlaylistMenu);
+                        setShowSortMenu(false);
+                      }}
+                      className={`min-w-[220px] max-w-[320px] rounded-xl border px-4 py-2 text-left transition-colors ${
+                        selectedFolderPlaylist
+                          ? 'border-white/16 bg-white/8 text-white'
+                          : 'border-white/10 bg-white/5 text-white/85 hover:border-white/20 hover:bg-white/8'
+                      }`}
+                      title="Folder playlists"
                     >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-white/35">
+                            Folder Playlist
+                          </p>
+                          <p className="mt-0.5 truncate text-sm font-medium leading-tight">
+                            {selectedFolderPlaylist?.name || 'All Tracks'}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0">
+                          <span className="rounded-full bg-white/8 px-2 py-0.5 text-[11px] font-semibold text-white/55">
+                            {selectedFolderPlaylist?.trackIndices.length ?? playlistItems.length}
+                          </span>
+                          <svg
+                            className={`h-4 w-4 text-white/40 transition-transform ${showFolderPlaylistMenu ? 'rotate-180' : ''}`}
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </div>
+                      </div>
+                    </button>
+
+                    {showFolderPlaylistMenu && (
+                      <>
+                        <div
+                          className="fixed inset-0 z-40"
+                          onClick={() => setShowFolderPlaylistMenu(false)}
+                        />
+                        <div className="absolute left-0 top-full mt-2 z-50 w-[320px] overflow-hidden rounded-xl border border-white/10 bg-[#111111]/95 shadow-2xl backdrop-blur-xl">
+                          <button
+                            onClick={() => {
+                              setSelectedFolderPlaylistId('all');
+                              setShowFolderPlaylistMenu(false);
+                            }}
+                            className={`flex w-full items-center justify-between px-4 py-3 text-left text-sm transition-colors ${
+                              selectedFolderPlaylistId === 'all'
+                                ? 'bg-white/10 text-white'
+                                : 'text-white/72 hover:bg-white/6 hover:text-white'
+                            }`}
+                          >
+                            <span>All Tracks</span>
+                            <span className="text-xs text-white/35">{playlistItems.length}</span>
+                          </button>
+                          {folderPlaylists.map((playlist) => (
+                            <button
+                              key={playlist.id}
+                              onClick={() => {
+                                setSelectedFolderPlaylistId(playlist.id);
+                                setShowFolderPlaylistMenu(false);
+                              }}
+                              className={`flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm transition-colors ${
+                                selectedFolderPlaylistId === playlist.id
+                                  ? 'bg-white/10 text-white'
+                                  : 'text-white/72 hover:bg-white/6 hover:text-white'
+                              }`}
+                              title={playlist.name}
+                            >
+                              <span className="truncate">{playlist.name}</span>
+                              <span className="shrink-0 text-xs text-white/35">{playlist.trackIndices.length}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ) : (
+                  <div />
+                )}
+
+                {/* Search Input */}
+                <div className="flex items-center justify-end gap-3">
+                  <div className="relative w-64">
+                    <input
+                      type="text"
+                      placeholder={viewMode === 'playlist' ? 'Search songs...' : viewMode === 'albums' ? 'Search albums...' : 'Search artists...'}
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 pl-10 text-sm text-white placeholder-white/30 focus:outline-none focus:border-white/30 transition-colors"
+                    />
+                    <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    {searchQuery && (
+                      <button 
+                        onClick={() => setSearchQuery('')}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white transition-colors"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                  
+                  {/* Sort Icon Button with Dropdown */}
+                  <div className="relative">
+                    <button 
+                      onClick={() => {
+                        setShowSortMenu(!showSortMenu);
+                        setShowFolderPlaylistMenu(false);
+                      }}
+                      className={`p-2 rounded-lg transition-colors ${sortMode !== 'default' ? 'bg-white/20 text-white' : 'bg-white/5 text-white/50 hover:text-white hover:bg-white/10'}`}
+                      title="Sort options"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" />
                       </svg>
                     </button>
-                  )}
-                </div>
-                
-                {/* Sort Icon Button with Dropdown */}
-                <div className="relative">
-                  <button 
-                    onClick={() => setShowSortMenu(!showSortMenu)}
-                    className={`p-2 rounded-lg transition-colors ${sortMode !== 'default' ? 'bg-white/20 text-white' : 'bg-white/5 text-white/50 hover:text-white hover:bg-white/10'}`}
-                    title="Sort options"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" />
-                    </svg>
-                  </button>
-                  
-                  {/* Sort Dropdown Menu */}
-                  {showSortMenu && (
-                    <>
-                      {/* Backdrop */}
-                      <div 
-                        className="fixed inset-0 z-40" 
-                        onClick={() => setShowSortMenu(false)}
-                      />
-                      {/* Menu */}
-                      <div className="absolute right-0 top-full mt-2 w-40 bg-neutral-900 border border-white/10 rounded-lg shadow-xl z-50 overflow-hidden">
-                        <button
-                          onClick={() => { setSortMode('default'); setShowSortMenu(false); }}
-                          className={`w-full px-4 py-2.5 text-left text-sm flex items-center gap-2 transition-colors ${sortMode === 'default' ? 'bg-white/10 text-white' : 'text-white/70 hover:bg-white/5 hover:text-white'}`}
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                          </svg>
-                          Default
-                        </button>
-                        <button
-                          onClick={() => { setSortMode('alpha'); setShowSortMenu(false); }}
-                          className={`w-full px-4 py-2.5 text-left text-sm flex items-center gap-2 transition-colors ${sortMode === 'alpha' ? 'bg-white/10 text-white' : 'text-white/70 hover:bg-white/5 hover:text-white'}`}
-                        >
-                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M12.93 2h-1.86L5.5 17h2.24l1.27-3.5h5.99l1.27 3.5h2.24L12.93 2zm-3.14 9.5L12 5.09l2.21 6.41H9.79zM19 21l-3-2.5v2H5v3h11v2l3-2.5z" />
-                          </svg>
-                          A-Z
-                        </button>
-                        <button
-                          onClick={() => { setSortMode('year'); setShowSortMenu(false); }}
-                          className={`w-full px-4 py-2.5 text-left text-sm flex items-center gap-2 transition-colors ${sortMode === 'year' ? 'bg-white/10 text-white' : 'text-white/70 hover:bg-white/5 hover:text-white'}`}
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                          </svg>
-                          Year (Oldest)
-                        </button>
-                        <button
-                          onClick={() => { setSortMode('year-desc'); setShowSortMenu(false); }}
-                          className={`w-full px-4 py-2.5 text-left text-sm flex items-center gap-2 transition-colors ${sortMode === 'year-desc' ? 'bg-white/10 text-white' : 'text-white/70 hover:bg-white/5 hover:text-white'}`}
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                          </svg>
-                          Year (Newest)
-                        </button>
-                        <button
-                          onClick={() => { setSortMode('alpha-desc'); setShowSortMenu(false); }}
-                          className={`w-full px-4 py-2.5 text-left text-sm flex items-center gap-2 transition-colors ${sortMode === 'alpha-desc' ? 'bg-white/10 text-white' : 'text-white/70 hover:bg-white/5 hover:text-white'}`}
-                        >
-                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M12.93 2h-1.86L5.5 17h2.24l1.27-3.5h5.99l1.27 3.5h2.24L12.93 2zm-3.14 9.5L12 5.09l2.21 6.41H9.79zM19 21l-3-2.5v2H5v3h11v2l3-2.5z" />
-                          </svg>
-                          Z-A
-                        </button>
-                      </div>
-                    </>
-                  )}
+                    
+                    {/* Sort Dropdown Menu */}
+                    {showSortMenu && (
+                      <>
+                        {/* Backdrop */}
+                        <div 
+                          className="fixed inset-0 z-40" 
+                          onClick={() => setShowSortMenu(false)}
+                        />
+                        {/* Menu */}
+                        <div className="absolute right-0 top-full mt-2 w-40 bg-neutral-900 border border-white/10 rounded-lg shadow-xl z-50 overflow-hidden">
+                          <button
+                            onClick={() => { setSortMode('default'); setShowSortMenu(false); }}
+                            className={`w-full px-4 py-2.5 text-left text-sm flex items-center gap-2 transition-colors ${sortMode === 'default' ? 'bg-white/10 text-white' : 'text-white/70 hover:bg-white/5 hover:text-white'}`}
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                            </svg>
+                            Default
+                          </button>
+                          <button
+                            onClick={() => { setSortMode('alpha'); setShowSortMenu(false); }}
+                            className={`w-full px-4 py-2.5 text-left text-sm flex items-center gap-2 transition-colors ${sortMode === 'alpha' ? 'bg-white/10 text-white' : 'text-white/70 hover:bg-white/5 hover:text-white'}`}
+                          >
+                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                              <path d="M12.93 2h-1.86L5.5 17h2.24l1.27-3.5h5.99l1.27 3.5h2.24L12.93 2zm-3.14 9.5L12 5.09l2.21 6.41H9.79zM19 21l-3-2.5v2H5v3h11v2l3-2.5z" />
+                            </svg>
+                            A-Z
+                          </button>
+                          <button
+                            onClick={() => { setSortMode('year'); setShowSortMenu(false); }}
+                            className={`w-full px-4 py-2.5 text-left text-sm flex items-center gap-2 transition-colors ${sortMode === 'year' ? 'bg-white/10 text-white' : 'text-white/70 hover:bg-white/5 hover:text-white'}`}
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                            Year (Oldest)
+                          </button>
+                          <button
+                            onClick={() => { setSortMode('year-desc'); setShowSortMenu(false); }}
+                            className={`w-full px-4 py-2.5 text-left text-sm flex items-center gap-2 transition-colors ${sortMode === 'year-desc' ? 'bg-white/10 text-white' : 'text-white/70 hover:bg-white/5 hover:text-white'}`}
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                            Year (Newest)
+                          </button>
+                          <button
+                            onClick={() => { setSortMode('alpha-desc'); setShowSortMenu(false); }}
+                            className={`w-full px-4 py-2.5 text-left text-sm flex items-center gap-2 transition-colors ${sortMode === 'alpha-desc' ? 'bg-white/10 text-white' : 'text-white/70 hover:bg-white/5 hover:text-white'}`}
+                          >
+                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                              <path d="M12.93 2h-1.86L5.5 17h2.24l1.27-3.5h5.99l1.27 3.5h2.24L12.93 2zm-3.14 9.5L12 5.09l2.21 6.41H9.79zM19 21l-3-2.5v2H5v3h11v2l3-2.5z" />
+                            </svg>
+                            Z-A
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
@@ -586,7 +725,7 @@ const LibraryViewBase: React.FC<LibraryViewProps> = ({
                           <div
                             key={`${item.path || item.name}-${playIndex}`}
                             data-index={playIndex}
-                            onClick={() => handleSongSelect(playIndex)}
+                            onClick={() => handlePlaylistItemSelect(item, playIndex)}
                             className={`playlist-item virtual-list-item group flex items-center px-4 py-3 rounded-md cursor-pointer h-[56px] transition-colors ${
                               isCurrentSong ? "active bg-white/5" : "hover:bg-white/5"
                             }`}
@@ -612,7 +751,7 @@ const LibraryViewBase: React.FC<LibraryViewProps> = ({
                                   togglePlay();
                                 } else {
                                   // Play this song
-                                  handleSongSelect(playIndex);
+                                  handlePlaylistItemSelect(item, playIndex);
                                 }
                               }}
                             >
@@ -686,8 +825,12 @@ const LibraryViewBase: React.FC<LibraryViewProps> = ({
                     {playlistData.length === 0 && (
                       <div className="flex flex-col items-center justify-center py-16 gap-4">
                         <svg className="w-16 h-16 text-white/10" fill="currentColor" viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" /></svg>
-                        <p className="text-white/20 text-sm uppercase tracking-widest">No tracks in playlist</p>
-                        <p className="text-white/10 text-xs">Import a folder or track to get started</p>
+                        <p className="text-white/20 text-sm uppercase tracking-widest">
+                          {selectedFolderPlaylist ? 'No tracks in this playlist' : 'No tracks in playlist'}
+                        </p>
+                        <p className="text-white/10 text-xs">
+                          {selectedFolderPlaylist ? 'Try another subfolder playlist or clear the filter' : 'Import a folder or track to get started'}
+                        </p>
                       </div>
                     )}
                   </div>

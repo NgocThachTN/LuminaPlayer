@@ -22,6 +22,7 @@ const App: React.FC = () => {
   const { 
     playlistItems, 
     setPlaylistItems,
+    folderPlaylists,
     albums, 
     artists, 
     metadataLoaded, 
@@ -55,10 +56,9 @@ const App: React.FC = () => {
     
     // For now, let's just expose a way to set Queue.
     // check handlePlayFromContext below.
-  }, () => {
+  }, (message) => {
      uiHook.setViewMode('playlist');
-     uiHook.setShowImportSuccess(true);
-     setTimeout(() => uiHook.setShowImportSuccess(false), 3000);
+     uiHook.setLibraryToastMessage(message);
   });
 
   // 2.5 Queue System
@@ -129,6 +129,16 @@ const App: React.FC = () => {
   const [isDocumentFullscreen, setIsDocumentFullscreen] = useState(false);
 
   useEffect(() => {
+    if (!uiHook.libraryToastMessage) return;
+
+    const timer = setTimeout(() => {
+      uiHook.setLibraryToastMessage(null);
+    }, 3000);
+
+    return () => clearTimeout(timer);
+  }, [uiHook.libraryToastMessage, uiHook.setLibraryToastMessage]);
+
+  useEffect(() => {
     const handleFullscreenChange = () => {
       setIsDocumentFullscreen(!!document.fullscreenElement);
     };
@@ -143,7 +153,17 @@ const App: React.FC = () => {
 
   const openLyricsFullscreen = useCallback(() => {
     uiHook.setIsFullScreenPlayer(true);
+
+    if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+      document.documentElement.requestFullscreen().catch(() => {
+        // Some browsers may block fullscreen outside trusted app windows.
+      });
+    }
+  }, [uiHook.setIsFullScreenPlayer]);
+
+  const openPlayerWithLyrics = useCallback(() => {
     uiHook.setShowLyrics(true);
+    uiHook.setIsFullScreenPlayer(true);
 
     if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
       document.documentElement.requestFullscreen().catch(() => {
@@ -233,6 +253,7 @@ const App: React.FC = () => {
             viewMode={uiHook.viewMode}
             setViewMode={uiHook.setViewMode}
             playlistItems={playlistItems}
+            folderPlaylists={folderPlaylists}
             albums={albums}
             artists={artists}
             metadataLoaded={metadataLoaded}
@@ -265,15 +286,15 @@ const App: React.FC = () => {
       </main>
 
       {/* Footer Player */}
-      <FooterPlayer 
+       <FooterPlayer 
          state={state}
          audioInfo={audioInfo}
          playlistCount={queue.length} // Show Queue count now
          isFullScreenPlayer={uiHook.isFullScreenPlayer}
-         setIsFullScreenPlayer={uiHook.setIsFullScreenPlayer}
-         openLyricsFullscreen={openLyricsFullscreen}
-         exitLyricsFullscreen={exitLyricsFullscreen}
          isDocumentFullscreen={isDocumentFullscreen}
+         setIsFullScreenPlayer={uiHook.setIsFullScreenPlayer}
+         openPlayerWithLyrics={openPlayerWithLyrics}
+         exitDocumentFullscreen={exitLyricsFullscreen}
          playPrevious={audioHook.playPrevious}
          playNext={audioHook.playNext}
          togglePlay={audioHook.togglePlay}
@@ -315,14 +336,14 @@ const App: React.FC = () => {
         onSave={() => {}}
       />
       
-      {/* Import Success Notification */}
-      {uiHook.showImportSuccess && hasCheckedSaved && playlistItems.length > 0 && (
+      {/* Library Action Notification */}
+      {uiHook.libraryToastMessage && hasCheckedSaved && (
         <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[200] transition-all duration-500 transform translate-y-0 opacity-100">
           <div className="bg-white text-black px-6 py-3 rounded-full shadow-[0_0_30px_rgba(255,255,255,0.2)] flex items-center gap-3">
              <div className="w-5 h-5 bg-green-500 rounded-full flex items-center justify-center text-white">
                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
              </div>
-             <span className="font-bold text-sm tracking-wide uppercase">Imported Successfully</span>
+             <span className="font-bold text-sm tracking-wide uppercase">{uiHook.libraryToastMessage}</span>
           </div>
         </div>
       )}
