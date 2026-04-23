@@ -255,6 +255,7 @@ const App: React.FC = () => {
             autoScrollEnabled={lyricsHook.autoScrollEnabled}
             stopAutoScroll={lyricsHook.stopAutoScroll}
             resumeAutoScroll={lyricsHook.resumeAutoScroll}
+            resetLyricsLayout={lyricsHook.resetLyricsLayout}
             isLoading={isLoading}
             hasStarted={lyricsHook.hasStarted}
             // UI Helpers

@@ -79,6 +79,19 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
     return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
   };
 
+  const getScrollTargetIndex = useCallback(() => {
+    if (!state.lyrics.isSynced || state.lyrics.synced.length === 0) {
+      return -1;
+    }
+
+    return activeLyricIndexRef.current >= 0 ? activeLyricIndexRef.current : 0;
+  }, [state.lyrics]);
+
+  const resetCachedLyricsLayout = useCallback(() => {
+    lyricsPaddingTopRef.current = null;
+    lyricOffsetTopCacheRef.current = [];
+  }, []);
+
   const cancelPendingScroll = useCallback(() => {
     if (scrollTimeoutRef.current) {
       cancelAnimationFrame(scrollTimeoutRef.current);
@@ -97,6 +110,11 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
         const activeElement = lyricsContainerRef.current.children[index] as HTMLElement;
         if (activeElement) {
            const container = lyricsContainerRef.current;
+           if (container.clientWidth === 0 || container.clientHeight === 0) {
+             resetCachedLyricsLayout();
+             return;
+           }
+
            cancelPendingScroll();
            
            let elementTop = lyricOffsetTopCacheRef.current[index];
@@ -153,21 +171,58 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
            scrollAnimationRef.current = requestAnimationFrame(animateScroll);
         }
      }
-  }, [cancelPendingScroll]);
+  }, [cancelPendingScroll, resetCachedLyricsLayout]);
 
   useEffect(() => {
-    const resetCachedLyricsLayout = () => {
-      lyricsPaddingTopRef.current = null;
-      lyricOffsetTopCacheRef.current = [];
-    };
-
     window.addEventListener("resize", resetCachedLyricsLayout);
     return () => window.removeEventListener("resize", resetCachedLyricsLayout);
-  }, []);
+  }, [resetCachedLyricsLayout]);
+
+  useEffect(() => {
+    const container = lyricsContainerRef.current;
+    if (!container || typeof ResizeObserver === "undefined") return;
+
+    let resizeFrame: number | null = null;
+
+    const syncActiveLineToLayout = () => {
+      if (!autoScrollEnabled) return;
+
+      const idx = getScrollTargetIndex();
+      if (idx < 0) return;
+
+      cancelPendingScroll();
+      resizeFrame = requestAnimationFrame(() => {
+        resizeFrame = null;
+        performScroll(idx, "instant");
+      });
+    };
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+
+      if (entry.contentRect.width <= 0 || entry.contentRect.height <= 0) {
+        resetCachedLyricsLayout();
+        return;
+      }
+
+      resetCachedLyricsLayout();
+      syncActiveLineToLayout();
+    });
+
+    observer.observe(container);
+
+    return () => {
+      observer.disconnect();
+      if (resizeFrame) {
+        cancelAnimationFrame(resizeFrame);
+      }
+    };
+  }, [autoScrollEnabled, cancelPendingScroll, getScrollTargetIndex, performScroll, resetCachedLyricsLayout]);
 
   // Exposed function to force scroll to active line
   const scrollToActiveLine = useCallback((instant = false) => {
-     const idx = activeLyricIndexRef.current;
+     const idx = getScrollTargetIndex();
      if (idx >= 0) {
         cancelPendingScroll();
         scrollTimeoutRef.current = requestAnimationFrame(() => {
@@ -175,7 +230,12 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
             performScroll(idx, instant ? "instant" : "smooth");
         });
      }
-  }, [cancelPendingScroll, performScroll]);
+  }, [cancelPendingScroll, getScrollTargetIndex, performScroll]);
+
+  const resetLyricsLayout = useCallback(() => {
+    resetCachedLyricsLayout();
+    scrollToActiveLine(true);
+  }, [resetCachedLyricsLayout, scrollToActiveLine]);
 
   // Resume auto-scroll and snap to current line
   const resumeAutoScroll = useCallback(() => {
@@ -362,6 +422,7 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
     resumeAutoScroll,
     lyricsContainerRef,
     scrollToActiveLine,
+    resetLyricsLayout,
     hasStarted,
   };
 };

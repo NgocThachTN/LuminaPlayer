@@ -50,7 +50,7 @@ export const SettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
           <div>
             <h2 className="text-xl font-bold">Settings</h2>
             <p className="mt-2 text-sm text-white/45">
-              Bật hoặc tắt Discord Rich Presence khi đang nghe nhạc.
+              Turn Discord Rich Presence on or off while listening to music.
             </p>
           </div>
           <button
@@ -69,7 +69,7 @@ export const SettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
             <div>
               <p className="text-sm font-semibold text-white">Discord Presence</p>
               <p className="mt-1 text-xs text-white/45">
-                Hiển thị bài hát đang phát trên Discord.
+                Show the currently playing track on Discord.
               </p>
             </div>
 

@@ -34,6 +34,7 @@ interface PlayerOverlayProps {
   autoScrollEnabled: boolean;
   stopAutoScroll: () => void;
   resumeAutoScroll: () => void;
+  resetLyricsLayout: () => void;
   isLoading: boolean;
   scrollToActiveLine: () => void;
   hasStarted: boolean;
@@ -199,6 +200,7 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
   autoScrollEnabled,
   stopAutoScroll,
   resumeAutoScroll,
+  resetLyricsLayout,
   isLoading,
   scrollToActiveLine,
   hasStarted,
@@ -206,11 +208,16 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
   setIsRestoringLayout,
   viewMode
 }) => {
+  const PANEL_FADE_MS = 220;
 
   const [coverPalette, setCoverPalette] = React.useState<string[]>([]);
   const [showQueue, setShowQueue] = React.useState(false);
   const [isFullscreenTransitioning, setIsFullscreenTransitioning] = React.useState(false);
+  const [renderLyricsPanel, setRenderLyricsPanel] = React.useState(showLyrics);
+  const [renderQueuePanel, setRenderQueuePanel] = React.useState(showQueue);
   const isSidePanelOpen = showLyrics || showQueue;
+  const isLyricsPanelVisible = isSidePanelOpen && showLyrics;
+  const isQueuePanelVisible = isSidePanelOpen && showQueue;
   const hasMountedFullscreenRef = React.useRef(false);
 
   React.useEffect(() => {
@@ -260,13 +267,24 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
     '--cover-bg-glow-rgb': hexToRgbString(ambientPalette.glow),
   } as React.CSSProperties), [ambientPalette]);
 
-  // Scroll to active line when opening lyrics - instant scroll to prevent jump
+  // Re-sync lyrics layout when opening after the side panel expands.
   React.useLayoutEffect(() => {
-    if (showLyrics && scrollToActiveLine && autoScrollEnabled) {
-       // Scroll instantly when opening to prevent visual jump
-       scrollToActiveLine(true); // true = instant
-    }
-  }, [showLyrics, scrollToActiveLine, autoScrollEnabled]);
+    if (!showLyrics || !autoScrollEnabled) return;
+
+    resetLyricsLayout();
+
+    const frame = window.requestAnimationFrame(() => {
+      resetLyricsLayout();
+    });
+    const timer = window.setTimeout(() => {
+      resetLyricsLayout();
+    }, 280);
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+    };
+  }, [showLyrics, autoScrollEnabled, resetLyricsLayout]);
 
   // Fix: Close volume popup when collapsing player
   React.useEffect(() => {
@@ -280,6 +298,32 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
       setShowQueue(false);
     }
   }, [showLyrics]);
+
+  React.useEffect(() => {
+    if (showLyrics) {
+      setRenderLyricsPanel(true);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setRenderLyricsPanel(false);
+    }, PANEL_FADE_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [showLyrics]);
+
+  React.useEffect(() => {
+    if (showQueue) {
+      setRenderQueuePanel(true);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setRenderQueuePanel(false);
+    }, PANEL_FADE_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [showQueue]);
 
   React.useEffect(() => {
     if (!hasMountedFullscreenRef.current) {
@@ -607,7 +651,7 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
       </div>
     </div>
       
-      {/* Right Side of Overlay: Lyrics - smooth fade and scale */}
+      {/* Right Side of Overlay: lyrics/queue fade only to avoid missed renders */}
       <div
         className={`md:flex h-full min-w-0 flex-col relative bg-transparent transform-gpu overflow-hidden ${isSidePanelOpen ? 'pointer-events-auto' : 'pointer-events-none'}`}
         style={{
@@ -618,35 +662,45 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
         }}
       >
         <div
-          className={`relative z-10 h-full w-full transform-gpu transition-[opacity,transform] duration-300 ease-out ${isSidePanelOpen ? 'opacity-100 translate-x-0 scale-100' : 'opacity-0 translate-x-8 scale-95'}`}
+          className={`relative z-10 h-full w-full transition-opacity duration-220 ease-out ${isSidePanelOpen ? 'opacity-100' : 'opacity-0'}`}
           style={{
-            transitionDelay: isSidePanelOpen ? '80ms' : '0ms',
+            transitionDelay: isSidePanelOpen ? '60ms' : '0ms',
           }}
         >
+          <div
+            className={`absolute inset-0 transition-opacity duration-180 ease-out ${isQueuePanelVisible ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
+            aria-hidden={!isQueuePanelVisible}
+          >
+            {renderQueuePanel && (
+              <QueueView
+                items={queueItems}
+                currentSongIndex={state.currentSongIndex}
+                activeCover={state.metadata.cover}
+                onSelect={onQueueItemSelect}
+              />
+            )}
+          </div>
 
-          {showQueue ? (
-            <QueueView
-              items={queueItems}
-              currentSongIndex={state.currentSongIndex}
-              activeCover={state.metadata.cover}
-              onSelect={onQueueItemSelect}
-            />
-          ) : (
-            <LyricsView 
-              lyrics={state.lyrics}
-              isLoading={isLoading}
-              activeLyricIndex={activeLyricIndex}
-              autoScrollEnabled={autoScrollEnabled}
-              stopAutoScroll={stopAutoScroll}
-              resumeAutoScroll={resumeAutoScroll}
-              lyricsContainerRef={lyricsContainerRef}
-              audioRef={audioRef}
-              file={state.file}
-              hasStarted={hasStarted}
-              dominantColor={dominantColor}
-            />
-          )}
-
+          <div
+            className={`absolute inset-0 transition-opacity duration-220 ease-out ${isLyricsPanelVisible ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
+            aria-hidden={!isLyricsPanelVisible}
+          >
+            {renderLyricsPanel && (
+              <LyricsView 
+                lyrics={state.lyrics}
+                isLoading={isLoading}
+                activeLyricIndex={activeLyricIndex}
+                autoScrollEnabled={autoScrollEnabled}
+                stopAutoScroll={stopAutoScroll}
+                resumeAutoScroll={resumeAutoScroll}
+                lyricsContainerRef={lyricsContainerRef}
+                audioRef={audioRef}
+                file={state.file}
+                hasStarted={hasStarted}
+                dominantColor={dominantColor}
+              />
+            )}
+          </div>
         </div>
       </div>
     </div>
