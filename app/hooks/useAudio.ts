@@ -8,7 +8,7 @@ import {
   subscribeDiscordPresenceEnabled,
 } from "../../services/discordPresenceSettings";
 
-const emptyLyrics: LyricsResult = { synced: [], plain: [], isSynced: false };
+const createEmptyLyrics = (): LyricsResult => ({ synced: [], plain: [], isSynced: false });
 const isElectron = !!(window as any).electronAPI;
 
 // Constants
@@ -30,7 +30,11 @@ export const useAudio = (
   const audioRef = useRef<HTMLAudioElement>(null);
   const lastPresenceBucketRef = useRef<string>("");
   const activeTrackLoadTokenRef = useRef(0);
+  const lyricsAbortControllerRef = useRef<AbortController | null>(null);
   const [discordPresenceEnabled, setDiscordPresenceEnabled] = useState(true);
+
+  const isTrackRequestStale = (trackLoadToken: number, signal?: AbortSignal) =>
+    activeTrackLoadTokenRef.current !== trackLoadToken || !!signal?.aborted;
 
   useEffect(() => {
     let isMounted = true;
@@ -79,6 +83,9 @@ export const useAudio = (
   // Play from playlist item (supports both File and path)
   const playSongFromItem = async (item: PlaylistItem, index: number) => {
     const trackLoadToken = ++activeTrackLoadTokenRef.current;
+    lyricsAbortControllerRef.current?.abort();
+    const lyricsAbortController = new AbortController();
+    lyricsAbortControllerRef.current = lyricsAbortController;
 
     // Scroll lyrics to top is handled by useLyrics effect on song change
     
@@ -102,15 +109,6 @@ export const useAudio = (
     // If we only have path (Electron), use file:// protocol directly
     else if (item.path && isElectron) {
       url = `file://${item.path.replace(/\\/g, "/")}`;
-
-      // Get basic metadata from filename
-      const electronAPI = (window as any).electronAPI;
-      if (electronAPI) {
-        const info = await electronAPI.getFileInfo(item.path);
-        metadataTitle = info.title;
-        metadataArtist = info.artist;
-        fileSize = info.size || null;
-      }
     }
 
     // Use cached metadata if available
@@ -128,6 +126,41 @@ export const useAudio = (
            metadataTitle = toTitleCase(filenameBase);
       }
     }
+
+    if (!item.metadata && item.path && isElectron) {
+      const filenameBase = item.name.replace(/\.[^/.]+$/, "");
+      const parts = filenameBase.split(" - ");
+      if (parts.length >= 2) {
+        metadataArtist = toTitleCase(parts[0].trim());
+        metadataTitle = toTitleCase(parts.slice(1).join(" - ").trim());
+      } else {
+        metadataTitle = toTitleCase(filenameBase);
+      }
+    }
+
+    const normalizeMetadata = (
+      metadata?: Partial<SongMetadata>,
+      fallbackCover?: string
+    ): SongMetadata => ({
+      title: toTitleCase((metadata?.title || metadataTitle).trim()),
+      artist: toTitleCase((metadata?.artist || metadataArtist).trim()),
+      album: toTitleCase((metadata?.album || metadataAlbum).trim()),
+      cover: metadata?.cover ?? fallbackCover,
+      year: metadata?.year,
+    });
+
+    const hasCachedLyricsMetadata =
+      !!item.metadata?.title?.trim() &&
+      !!item.metadata?.artist?.trim() &&
+      item.metadata.artist.trim().toLowerCase() !== "unknown artist";
+
+    const initialMetadata = normalizeMetadata(
+      item.metadata,
+      item.metadata?.cover
+    );
+    metadataTitle = initialMetadata.title;
+    metadataArtist = initialMetadata.artist;
+    metadataAlbum = initialMetadata.album || metadataAlbum;
 
     // Calculate bitrate when audio is loaded
     const calculateBitrate = (duration: number) => {
@@ -148,15 +181,11 @@ export const useAudio = (
       ...prev,
       file,
       url,
-      metadata: {
-        title: metadataTitle,
-        artist: metadataArtist,
-        album: metadataAlbum,
-        cover: item.metadata?.cover || prev.metadata.cover,
-      },
-      lyrics: emptyLyrics,
+      metadata: initialMetadata,
+      lyrics: createEmptyLyrics(),
       isPlaying: true,
       currentTime: 0,
+      duration: 0,
       currentSongIndex: index,
     }));
 
@@ -168,55 +197,57 @@ export const useAudio = (
     setIsLoading(true);
 
     const loadMetadataAndLyrics = async () => {
-      let finalTitle = metadataTitle;
-      let finalArtist = metadataArtist;
-      let finalMetadata: SongMetadata = {
-        title: metadataTitle,
-        artist: metadataArtist,
-        album: metadataAlbum,
-        cover: undefined,
-      };
+      let finalMetadata = initialMetadata;
 
       try {
-        if (item.path && isElectron && electronAPI) {
+        if (!hasCachedLyricsMetadata && item.path && isElectron && electronAPI) {
           const metadata = await electronAPI.extractMetadata(item.path);
-          finalTitle = toTitleCase(metadata.title);
-          finalArtist = toTitleCase(metadata.artist);
-          finalMetadata = { ...metadata, title: finalTitle, artist: finalArtist };
-        } else if (file) {
+          if (isTrackRequestStale(trackLoadToken, lyricsAbortController.signal)) {
+            return;
+          }
+          finalMetadata = normalizeMetadata(metadata, initialMetadata.cover);
+        } else if (!hasCachedLyricsMetadata && file) {
           const metadata = await extractMetadata(file);
-          finalTitle = toTitleCase(metadata.title);
-          finalArtist = toTitleCase(metadata.artist);
-          finalMetadata = { ...metadata, title: finalTitle, artist: finalArtist };
+          if (isTrackRequestStale(trackLoadToken, lyricsAbortController.signal)) {
+            return;
+          }
+          finalMetadata = normalizeMetadata(metadata, initialMetadata.cover);
         }
       } catch (e) {
         console.error("Error extracting metadata:", e);
       }
 
-      if (activeTrackLoadTokenRef.current !== trackLoadToken) {
+      if (isTrackRequestStale(trackLoadToken, lyricsAbortController.signal)) {
         return;
       }
 
-      if (isElectron && electronAPI?.preloadDiscordCover && finalArtist !== "Unknown Artist") {
+      if (
+        isElectron &&
+        electronAPI?.preloadDiscordCover &&
+        finalMetadata.artist !== "Unknown Artist"
+      ) {
         void electronAPI.preloadDiscordCover({
-          title: finalTitle,
-          artist: finalArtist,
+          title: finalMetadata.title,
+          artist: finalMetadata.artist,
           album: finalMetadata.album || metadataAlbum,
         });
       }
 
-      setState((prev) => {
-        return { ...prev, metadata: finalMetadata };
-      });
+      if (!hasCachedLyricsMetadata) {
+        setState((prev) => {
+          return { ...prev, metadata: finalMetadata };
+        });
+      }
 
       try {
         const lyrics = await getLyrics(
-          finalTitle,
-          finalArtist,
-          finalMetadata.album || metadataAlbum
+          finalMetadata.title,
+          finalMetadata.artist,
+          finalMetadata.album || metadataAlbum,
+          lyricsAbortController.signal
         );
 
-        if (activeTrackLoadTokenRef.current !== trackLoadToken) {
+        if (isTrackRequestStale(trackLoadToken, lyricsAbortController.signal)) {
           return;
         }
 
@@ -224,11 +255,13 @@ export const useAudio = (
           return { ...prev, lyrics };
         });
       } catch (e) {
-        console.error("Error loading lyrics:", e);
-      }
-
-      if (activeTrackLoadTokenRef.current === trackLoadToken) {
-        setIsLoading(false);
+        if ((e as { name?: string })?.name !== "AbortError") {
+          console.error("Error loading lyrics:", e);
+        }
+      } finally {
+        if (!isTrackRequestStale(trackLoadToken, lyricsAbortController.signal)) {
+          setIsLoading(false);
+        }
       }
     };
 
@@ -446,6 +479,7 @@ export const useAudio = (
   // Clear Discord presence on unmount
   useEffect(() => {
     return () => {
+      lyricsAbortControllerRef.current?.abort();
       const electronAPI = (window as any).electronAPI;
       if (isElectron && electronAPI?.clearDiscordPresence) {
         electronAPI.clearDiscordPresence();

@@ -165,6 +165,50 @@ let coverCachePersistTimer = null;
 let youTubeMusicConfig = null;
 let youTubeMusicConfigFetchedAt = 0;
 let youTubeMusicConfigInFlight = null;
+const activeLyricsLookupControllers = new Map();
+
+function createAbortError(message = "Lyrics request aborted") {
+  const error = new Error(message);
+  error.name = "AbortError";
+  return error;
+}
+
+function isAbortError(error) {
+  return error?.name === "AbortError" || error?.code === "ABORT_ERR";
+}
+
+function throwIfAborted(signal) {
+  if (signal?.aborted) {
+    throw createAbortError();
+  }
+}
+
+function createScopedAbortController(signal, timeoutMs) {
+  const controller = new AbortController();
+  const abortFromParent = () => controller.abort();
+
+  if (signal) {
+    if (signal.aborted) {
+      controller.abort();
+    } else {
+      signal.addEventListener("abort", abortFromParent, { once: true });
+    }
+  }
+
+  const timeout = typeof timeoutMs === "number"
+    ? setTimeout(() => controller.abort(), timeoutMs)
+    : null;
+
+  return {
+    signal: controller.signal,
+    cleanup() {
+      if (timeout) clearTimeout(timeout);
+      if (signal) {
+        signal.removeEventListener("abort", abortFromParent);
+      }
+    },
+  };
+}
 
 function loadPersistedCoverCache() {
   try {
@@ -568,7 +612,8 @@ async function searchITunes(query, entity) {
   }
 }
 
-async function getYouTubeMusicConfig(forceRefresh = false) {
+async function getYouTubeMusicConfig(forceRefresh = false, signal = undefined) {
+  throwIfAborted(signal);
   const isFresh =
     !forceRefresh &&
     youTubeMusicConfig &&
@@ -583,12 +628,12 @@ async function getYouTubeMusicConfig(forceRefresh = false) {
   }
 
   const request = (async () => {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
+    const requestAbort = createScopedAbortController(signal, 5000);
 
     try {
+      throwIfAborted(signal);
       const response = await fetch("https://music.youtube.com/", {
-        signal: controller.signal,
+        signal: requestAbort.signal,
         headers: YOUTUBE_MUSIC_HEADERS,
       });
 
@@ -611,7 +656,7 @@ async function getYouTubeMusicConfig(forceRefresh = false) {
       youTubeMusicConfigFetchedAt = Date.now();
       return youTubeMusicConfig;
     } finally {
-      clearTimeout(timeout);
+      requestAbort.cleanup();
     }
   })();
 
@@ -839,10 +884,10 @@ function collectYouTubeMusicSongCandidates(node, results = []) {
   return results;
 }
 
-async function searchYouTubeMusicSongs(query, forceRefresh = false) {
-  const config = await getYouTubeMusicConfig(forceRefresh);
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
+async function searchYouTubeMusicSongs(query, forceRefresh = false, signal = undefined) {
+  throwIfAborted(signal);
+  const config = await getYouTubeMusicConfig(forceRefresh, signal);
+  const requestAbort = createScopedAbortController(signal, 8000);
 
   try {
     const context = JSON.parse(JSON.stringify(config.context));
@@ -854,7 +899,7 @@ async function searchYouTubeMusicSongs(query, forceRefresh = false) {
       `https://music.youtube.com/youtubei/v1/search?prettyPrint=false&key=${config.apiKey}`,
       {
         method: "POST",
-        signal: controller.signal,
+        signal: requestAbort.signal,
         headers: {
           ...YOUTUBE_MUSIC_HEADERS,
           "Accept": "application/json",
@@ -868,7 +913,7 @@ async function searchYouTubeMusicSongs(query, forceRefresh = false) {
 
     if (!response.ok) {
       if (!forceRefresh) {
-        return searchYouTubeMusicSongs(query, true);
+        return searchYouTubeMusicSongs(query, true, signal);
       }
 
       throw new Error(`YouTube Music song search failed: ${response.status}`);
@@ -876,7 +921,7 @@ async function searchYouTubeMusicSongs(query, forceRefresh = false) {
 
     return collectYouTubeMusicSongCandidates(await response.json());
   } finally {
-    clearTimeout(timeout);
+    requestAbort.cleanup();
   }
 }
 
@@ -1056,22 +1101,22 @@ function parseYouTubeMusicTimedLyrics(timedData) {
     .sort((a, b) => a.time - b.time);
 }
 
-async function fetchYouTubeMusicLyricsForVideo(videoId, forceRefresh = false) {
-  const config = await getYouTubeMusicConfig(forceRefresh);
+async function fetchYouTubeMusicLyricsForVideo(videoId, forceRefresh = false, signal = undefined) {
+  throwIfAborted(signal);
+  const config = await getYouTubeMusicConfig(forceRefresh, signal);
   const context = JSON.parse(JSON.stringify(config.context));
   if (context?.client) {
     context.client.originalUrl = `https://music.youtube.com/watch?v=${videoId}`;
   }
 
-  const nextController = new AbortController();
-  const nextTimeout = setTimeout(() => nextController.abort(), 8000);
+  const nextRequestAbort = createScopedAbortController(signal, 8000);
 
   try {
     const nextResponse = await fetch(
       `https://music.youtube.com/youtubei/v1/next?prettyPrint=false&key=${config.apiKey}`,
       {
         method: "POST",
-        signal: nextController.signal,
+        signal: nextRequestAbort.signal,
         headers: {
           ...YOUTUBE_MUSIC_HEADERS,
           "Accept": "application/json",
@@ -1085,7 +1130,7 @@ async function fetchYouTubeMusicLyricsForVideo(videoId, forceRefresh = false) {
 
     if (!nextResponse.ok) {
       if (!forceRefresh) {
-        return fetchYouTubeMusicLyricsForVideo(videoId, true);
+        return fetchYouTubeMusicLyricsForVideo(videoId, true, signal);
       }
 
       throw new Error(`YouTube Music next failed: ${nextResponse.status}`);
@@ -1098,8 +1143,7 @@ async function fetchYouTubeMusicLyricsForVideo(videoId, forceRefresh = false) {
       return null;
     }
 
-    const browseController = new AbortController();
-    const browseTimeout = setTimeout(() => browseController.abort(), 8000);
+    const browseRequestAbort = createScopedAbortController(signal, 8000);
 
     try {
       const timedClientOverrides = [
@@ -1108,6 +1152,7 @@ async function fetchYouTubeMusicLyricsForVideo(videoId, forceRefresh = false) {
       ];
 
       for (const clientOverride of timedClientOverrides) {
+        throwIfAborted(signal);
         try {
           const mobileContext = JSON.parse(JSON.stringify(config.context));
           if (mobileContext?.client) {
@@ -1119,7 +1164,7 @@ async function fetchYouTubeMusicLyricsForVideo(videoId, forceRefresh = false) {
             `https://music.youtube.com/youtubei/v1/browse?prettyPrint=false&key=${config.apiKey}`,
             {
               method: "POST",
-              signal: browseController.signal,
+              signal: browseRequestAbort.signal,
               headers: {
                 ...YOUTUBE_MUSIC_HEADERS,
                 "Accept": "application/json",
@@ -1148,6 +1193,9 @@ async function fetchYouTubeMusicLyricsForVideo(videoId, forceRefresh = false) {
             }
           }
         } catch (error) {
+          if (isAbortError(error)) {
+            throw error;
+          }
           console.warn(
             `YouTube Music timed lyrics failed (${clientOverride.clientName}):`,
             error?.message || error
@@ -1159,7 +1207,7 @@ async function fetchYouTubeMusicLyricsForVideo(videoId, forceRefresh = false) {
         `https://music.youtube.com/youtubei/v1/browse?prettyPrint=false&key=${config.apiKey}`,
         {
           method: "POST",
-          signal: browseController.signal,
+          signal: browseRequestAbort.signal,
           headers: {
             ...YOUTUBE_MUSIC_HEADERS,
             "Accept": "application/json",
@@ -1184,20 +1232,21 @@ async function fetchYouTubeMusicLyricsForVideo(videoId, forceRefresh = false) {
 
       return lyrics ? { lyrics } : null;
     } finally {
-      clearTimeout(browseTimeout);
+      browseRequestAbort.cleanup();
     }
   } finally {
-    clearTimeout(nextTimeout);
+    nextRequestAbort.cleanup();
   }
 }
 
-async function fetchLyricsFromYouTubeMusic(title, artist, album = "") {
+async function fetchLyricsFromYouTubeMusic(title, artist, album = "", signal = undefined) {
   const attempts = buildYouTubeMusicLyricsQueries(title, artist, album);
   let plainFallback = null;
 
   for (const query of attempts) {
+    throwIfAborted(signal);
     try {
-      const candidates = await searchYouTubeMusicSongs(query);
+      const candidates = await searchYouTubeMusicSongs(query, false, signal);
       const matchedCandidates = candidates
         .filter((candidate) => isLikelyYouTubeMusicSongMatch(candidate, title, artist))
         .sort(
@@ -1207,7 +1256,8 @@ async function fetchLyricsFromYouTubeMusic(title, artist, album = "") {
         );
 
       for (const candidate of matchedCandidates.slice(0, 5)) {
-        const lyrics = await fetchYouTubeMusicLyricsForVideo(candidate.videoId);
+        throwIfAborted(signal);
+        const lyrics = await fetchYouTubeMusicLyricsForVideo(candidate.videoId, false, signal);
         if (lyrics) {
           const result = {
             ...lyrics,
@@ -1224,6 +1274,9 @@ async function fetchLyricsFromYouTubeMusic(title, artist, album = "") {
         }
       }
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       console.warn(`YouTube Music lyrics lookup failed (${query}):`, error?.message || error);
     }
   }
@@ -1863,11 +1916,27 @@ ipcMain.handle("has-api-key", () => {
 ipcMain.handle("fetch-youtube-music-lyrics", async (event, { title, artist, album }) => {
   if (!title || !artist) return null;
 
+  const senderId = event.sender.id;
+  const previousController = activeLyricsLookupControllers.get(senderId);
+  if (previousController) {
+    previousController.abort();
+  }
+
+  const controller = new AbortController();
+  activeLyricsLookupControllers.set(senderId, controller);
+
   try {
-    return await fetchLyricsFromYouTubeMusic(title, artist, album || "");
+    return await fetchLyricsFromYouTubeMusic(title, artist, album || "", controller.signal);
   } catch (error) {
+    if (isAbortError(error)) {
+      return null;
+    }
     console.warn("YouTube Music lyrics lookup failed:", error?.message || error);
     return null;
+  } finally {
+    if (activeLyricsLookupControllers.get(senderId) === controller) {
+      activeLyricsLookupControllers.delete(senderId);
+    }
   }
 });
 

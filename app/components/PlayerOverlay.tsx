@@ -269,6 +269,7 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
       state.url,
     ]
   );
+  const prevLyricsContentKeyRef = React.useRef(lyricsContentKey);
 
   const playerBackgroundStyle = React.useMemo(() => ({
     backgroundColor: ambientPalette.base,
@@ -293,18 +294,26 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
 
   // Keep lyrics hidden until the side panel has settled and the scroll snap is already applied.
   React.useLayoutEffect(() => {
-    const justOpenedLyrics = showLyrics && !prevShowLyricsRef.current;
-    const justOpenedOverlayWithLyrics = showLyrics && isFullScreenPlayer && !prevIsFullScreenPlayerRef.current;
+    const previousShowLyrics = prevShowLyricsRef.current;
+    const previousIsFullScreenPlayer = prevIsFullScreenPlayerRef.current;
+    const previousLyricsContentKey = prevLyricsContentKeyRef.current;
+    const justOpenedLyrics = showLyrics && !previousShowLyrics;
+    const justOpenedOverlayWithLyrics = showLyrics && isFullScreenPlayer && !previousIsFullScreenPlayer;
+    const lyricsContentChangedWhileVisible =
+      showLyrics &&
+      previousShowLyrics &&
+      previousLyricsContentKey !== lyricsContentKey;
 
     prevShowLyricsRef.current = showLyrics;
     prevIsFullScreenPlayerRef.current = isFullScreenPlayer;
+    prevLyricsContentKeyRef.current = lyricsContentKey;
 
     if (!showLyrics) {
       setLyricsPanelReady(false);
       return;
     }
 
-    if (!justOpenedLyrics && !justOpenedOverlayWithLyrics) {
+    if (!justOpenedLyrics && !justOpenedOverlayWithLyrics && !lyricsContentChangedWhileVisible) {
       return;
     }
 
@@ -316,7 +325,10 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
     let stableFrameCount = 0;
     let attemptCount = 0;
     const maxAttempts = 36;
-    const shouldWaitForPanelSettle = !wasSidePanelOpenRef.current || justOpenedOverlayWithLyrics;
+    const shouldWaitForPanelSettle =
+      !wasSidePanelOpenRef.current ||
+      justOpenedOverlayWithLyrics ||
+      lyricsContentChangedWhileVisible;
 
     setLyricsPanelReady(false);
 
@@ -383,7 +395,7 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
         window.cancelAnimationFrame(revealRafTwo);
       }
     };
-  }, [isFullScreenPlayer, lyricsContainerRef, resetLyricsLayout, showLyrics]);
+  }, [isFullScreenPlayer, lyricsContainerRef, lyricsContentKey, resetLyricsLayout, showLyrics]);
 
   // Fix: Close volume popup when collapsing player
   React.useEffect(() => {

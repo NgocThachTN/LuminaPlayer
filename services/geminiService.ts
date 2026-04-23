@@ -1,6 +1,23 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { LyricLine, LyricsResult } from "../types";
 
+const emptyLyricsResult: LyricsResult = { synced: [], plain: [], isSynced: false };
+const lyricsCache = new Map<string, LyricsResult>();
+const lyricsRequestsInFlight = new Map<string, Promise<LyricsResult>>();
+
+const createLyricsAbortError = () => new DOMException("Lyrics request aborted", "AbortError");
+
+const isAbortError = (error: unknown): boolean =>
+  error instanceof DOMException
+    ? error.name === "AbortError"
+    : !!error && typeof error === "object" && "name" in error && (error as { name?: string }).name === "AbortError";
+
+const throwIfAborted = (signal?: AbortSignal) => {
+  if (signal?.aborted) {
+    throw createLyricsAbortError();
+  }
+};
+
 // Get API key - from Electron storage or environment variable
 let cachedApiKey: string | null = null;
 
@@ -33,11 +50,11 @@ export const hasApiKey = async (): Promise<boolean> => {
 // Fetch lyrics from lrclib.net API - prioritize synced, fallback to plain
 const fetchLrcLibLyrics = async (
   title: string,
-  artist: string
+  artist: string,
+  signal?: AbortSignal
 ): Promise<LyricsResult> => {
-  const emptyResult: LyricsResult = { synced: [], plain: [], isSynced: false };
-
   try {
+    throwIfAborted(signal);
     console.log(`[lrclib] Searching: title="${title}", artist="${artist}"`);
 
     // Method 1: Search by track and artist first (most accurate)
@@ -45,7 +62,7 @@ const fetchLrcLibLyrics = async (
       track_name: title,
       artist_name: artist,
     });
-    let response = await fetch(`https://lrclib.net/api/search?${params}`);
+    let response = await fetch(`https://lrclib.net/api/search?${params}`, { signal });
     let results = response.ok ? await response.json() : [];
     console.log(`[lrclib] Method 1 (track+artist): ${results.length} results`);
 
@@ -59,10 +76,12 @@ const fetchLrcLibLyrics = async (
     }
 
     // Method 2: Search with q parameter (artist + title)
+    throwIfAborted(signal);
     response = await fetch(
       `https://lrclib.net/api/search?q=${encodeURIComponent(
         `${artist} ${title}`
-      )}`
+      )}`,
+      { signal }
     );
     results = response.ok ? await response.json() : [];
     console.log(
@@ -78,8 +97,10 @@ const fetchLrcLibLyrics = async (
     }
 
     // Method 3: Search with title only (useful for CJK songs where artist may not match)
+    throwIfAborted(signal);
     response = await fetch(
-      `https://lrclib.net/api/search?q=${encodeURIComponent(title)}`
+      `https://lrclib.net/api/search?q=${encodeURIComponent(title)}`,
+      { signal }
     );
     results = response.ok ? await response.json() : [];
     console.log(`[lrclib] Method 3 (q=title only): ${results.length} results`);
@@ -94,35 +115,39 @@ const fetchLrcLibLyrics = async (
     }
 
     console.log("[lrclib] No matching lyrics found");
-    return emptyResult;
+    return emptyLyricsResult;
   } catch (error) {
+    if (isAbortError(error)) {
+      throw error;
+    }
     console.error("Error fetching from lrclib:", error);
-    return emptyResult;
+    return emptyLyricsResult;
   }
 };
 
 const fetchYouTubeMusicLyrics = async (
   title: string,
   artist: string,
-  album = ""
+  album = "",
+  signal?: AbortSignal
 ): Promise<LyricsResult> => {
-  const emptyResult: LyricsResult = { synced: [], plain: [], isSynced: false };
-
   try {
+    throwIfAborted(signal);
     console.log(
       `[youtube-music] Searching: title="${title}", artist="${artist}", album="${album}"`
     );
 
     const data = window.electronAPI?.fetchYouTubeMusicLyrics
       ? await window.electronAPI.fetchYouTubeMusicLyrics(title, artist, album)
-      : await fetchYouTubeMusicLyricsFromDevProxy(title, artist, album);
+      : await fetchYouTubeMusicLyricsFromDevProxy(title, artist, album, signal);
+    throwIfAborted(signal);
     const synced = Array.isArray(data?.synced)
       ? data.synced.filter((line) => Number.isFinite(line?.time) && line?.text)
       : [];
     const rawLyrics = data?.lyrics || "";
     if (synced.length === 0 && !rawLyrics) {
       console.log("[youtube-music] No lyrics found");
-      return emptyResult;
+      return emptyLyricsResult;
     }
 
     const plain = rawLyrics
@@ -140,25 +165,32 @@ const fetchYouTubeMusicLyrics = async (
     }
 
     console.log("[youtube-music] Response did not include usable lyrics");
-    return emptyResult;
+    return emptyLyricsResult;
   } catch (error) {
+    if (isAbortError(error)) {
+      throw error;
+    }
     console.error("Error fetching from YouTube Music:", error);
-    return emptyResult;
+    return emptyLyricsResult;
   }
 };
 
 const fetchYouTubeMusicLyricsFromDevProxy = async (
   title: string,
   artist: string,
-  album = ""
+  album = "",
+  signal?: AbortSignal
 ): Promise<{ lyrics: string; synced?: LyricLine[]; videoId?: string; title?: string; artist?: string } | null> => {
   try {
     const params = new URLSearchParams({ title, artist });
     if (album) params.set("album", album);
-    const response = await fetch(`/api/youtube-music-lyrics?${params}`);
+    const response = await fetch(`/api/youtube-music-lyrics?${params}`, { signal });
     if (!response.ok) return null;
     return await response.json();
-  } catch {
+  } catch (error) {
+    if (isAbortError(error)) {
+      throw error;
+    }
     return null;
   }
 };
@@ -410,24 +442,57 @@ const cleanSearchTerm = (term: string): string => {
     .trim();
 };
 
+const toLyricsCacheKeyPart = (value: string) =>
+  cleanSearchTerm(value)
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+
+const getLyricsCacheKey = (title: string, artist: string, album = "") =>
+  [
+    toLyricsCacheKeyPart(title),
+    toLyricsCacheKeyPart(artist),
+    toLyricsCacheKeyPart(album),
+  ].join("::");
+
 export const getLyrics = async (
   title: string,
   artist: string,
-  album = ""
+  album = "",
+  signal?: AbortSignal
 ): Promise<LyricsResult> => {
-  const emptyResult: LyricsResult = { synced: [], plain: [], isSynced: false };
   const originalTitle = title.trim();
   const originalArtist = artist.trim();
   const cleanTitle = cleanSearchTerm(title);
   const cleanArtist = cleanSearchTerm(artist);
+  const cacheKey = getLyricsCacheKey(originalTitle, originalArtist, album);
 
-  console.log(
-    `Searching lyrics for: "${originalTitle}" by "${originalArtist}"`
-  );
+  if (lyricsCache.has(cacheKey)) {
+    return lyricsCache.get(cacheKey)!;
+  }
+
+  if (lyricsRequestsInFlight.has(cacheKey)) {
+    const inFlight = lyricsRequestsInFlight.get(cacheKey)!;
+    try {
+      const result = await inFlight;
+      throwIfAborted(signal);
+      return result;
+    } catch (error) {
+      if (!isAbortError(error)) {
+        throw error;
+      }
+    }
+  }
+
+  const request = (async (): Promise<LyricsResult> => {
+    throwIfAborted(signal);
+    console.log(
+      `Searching lyrics for: "${originalTitle}" by "${originalArtist}"`
+    );
 
   // 1. YouTube Music - only use first-party synced lyrics.
   // If YouTube Music only returns plain lyrics, keep searching LRCLIB.
-  let result = await fetchYouTubeMusicLyrics(originalTitle, originalArtist, album);
+  let result = await fetchYouTubeMusicLyrics(originalTitle, originalArtist, album, signal);
   if (result.synced.length > 0) {
     console.log("[lyrics] Using YouTube Music (synced)");
     return result;
@@ -437,7 +502,8 @@ export const getLyrics = async (
   }
 
   if (cleanTitle !== originalTitle || cleanArtist !== originalArtist) {
-    result = await fetchYouTubeMusicLyrics(cleanTitle, cleanArtist, album);
+    throwIfAborted(signal);
+    result = await fetchYouTubeMusicLyrics(cleanTitle, cleanArtist, album, signal);
     if (result.synced.length > 0) {
       console.log("[lyrics] Using YouTube Music cleaned (synced)");
       return result;
@@ -448,7 +514,8 @@ export const getLyrics = async (
   }
 
   // 2. lrclib.net - Try with original first (for CJK songs)
-  result = await fetchLrcLibLyrics(originalTitle, originalArtist);
+  throwIfAborted(signal);
+  result = await fetchLrcLibLyrics(originalTitle, originalArtist, signal);
   if (result.synced.length > 0 || result.plain.length > 0) {
     console.log(`[lyrics] Using LRCLIB (${result.isSynced ? "synced" : "plain"})`);
     return result;
@@ -456,7 +523,8 @@ export const getLyrics = async (
 
   // Try with cleaned terms if different
   if (cleanTitle !== originalTitle || cleanArtist !== originalArtist) {
-    result = await fetchLrcLibLyrics(cleanTitle, cleanArtist);
+    throwIfAborted(signal);
+    result = await fetchLrcLibLyrics(cleanTitle, cleanArtist, signal);
     if (result.synced.length > 0 || result.plain.length > 0) {
       console.log(`[lyrics] Using LRCLIB cleaned (${result.isSynced ? "synced" : "plain"})`);
       return result;
@@ -464,10 +532,11 @@ export const getLyrics = async (
   }
 
   // 3. Fallback to Gemini AI (plain lyrics only)
+  throwIfAborted(signal);
   const apiKey = await getApiKey();
   if (!apiKey) {
     console.log("No API key available for Gemini fallback");
-    return emptyResult;
+    return emptyLyricsResult;
   }
 
   console.log("No lyrics found from online sources, using Gemini AI...");
@@ -499,6 +568,7 @@ export const getLyrics = async (
       },
     });
 
+    throwIfAborted(signal);
     const aiLyrics: string[] = JSON.parse(response.text || "[]");
     return {
       synced: [],
@@ -506,7 +576,25 @@ export const getLyrics = async (
       isSynced: false,
     };
   } catch (error) {
+    if (isAbortError(error)) {
+      throw error;
+    }
     console.error("Error fetching lyrics from Gemini:", error);
-    return emptyResult;
+    return emptyLyricsResult;
+  }
+
+  })();
+
+  lyricsRequestsInFlight.set(cacheKey, request);
+
+  try {
+    const result = await request;
+    throwIfAborted(signal);
+    lyricsCache.set(cacheKey, result);
+    return result;
+  } finally {
+    if (lyricsRequestsInFlight.get(cacheKey) === request) {
+      lyricsRequestsInFlight.delete(cacheKey);
+    }
   }
 };
