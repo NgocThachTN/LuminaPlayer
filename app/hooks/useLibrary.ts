@@ -9,6 +9,10 @@ import {
   SongState
 } from "../types";
 import { extractMetadata } from "../../services/metadataService";
+import {
+  getDiscordPresenceEnabled,
+  subscribeDiscordPresenceEnabled,
+} from "../../services/discordPresenceSettings";
 
 // Helper to check if running in Electron
 const isElectron = !!(window as any).electronAPI;
@@ -23,6 +27,7 @@ export const useLibrary = (
   const [metadataLoaded, setMetadataLoaded] = useState(false);
   const [hasCheckedSaved, setHasCheckedSaved] = useState(false);
   const [isRefreshingLibrary, setIsRefreshingLibrary] = useState(false);
+  const [discordPresenceEnabled, setDiscordPresenceEnabled] = useState(true);
   const [isPending, startTransition] = useTransition();
 
   // Helper to normalize text to Title Case
@@ -71,7 +76,7 @@ export const useLibrary = (
 
   const preloadDiscordCover = (metadata?: PlaylistItemMetadata) => {
     const electronAPI = (window as any).electronAPI;
-    if (!isElectron || !electronAPI?.preloadDiscordCover || !metadata?.title || !metadata?.artist) {
+    if (!discordPresenceEnabled || !isElectron || !electronAPI?.preloadDiscordCover || !metadata?.title || !metadata?.artist) {
       return;
     }
 
@@ -85,6 +90,25 @@ export const useLibrary = (
       album: metadata.album || "Unknown Album",
     });
   };
+
+  useEffect(() => {
+    let isMounted = true;
+
+    void getDiscordPresenceEnabled().then((enabled) => {
+      if (isMounted) {
+        setDiscordPresenceEnabled(enabled);
+      }
+    });
+
+    const unsubscribe = subscribeDiscordPresenceEnabled((enabled) => {
+      setDiscordPresenceEnabled(enabled);
+    });
+
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
+  }, []);
 
   // Load saved playlist on startup (Electron only)
   useEffect(() => {

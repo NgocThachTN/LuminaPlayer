@@ -1,6 +1,6 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { ApiKeyModal } from './components/ApiKeyModal';
+import { SettingsModal } from './components/SettingsModal';
 import { usePlayer } from './app/hooks/usePlayer';
 import { useLibrary } from './app/hooks/useLibrary';
 import { useAudio } from './app/hooks/useAudio';
@@ -291,7 +291,7 @@ const App: React.FC = () => {
             handleFolderChange={handleFolderChange}
             handleElectronFileSelect={handleElectronFileSelect}
             handleFileChange={handleFileChange}
-            setShowApiKeyModal={uiHook.setShowApiKeyModal}
+            setShowSettingsModal={uiHook.setShowSettingsModal}
             isRestoringLayout={uiHook.isRestoringLayout}
             setIsViewReady={uiHook.setIsViewReady}
             // Context Playback Prop
@@ -347,10 +347,9 @@ const App: React.FC = () => {
         onPause={() => setState((prev) => ({ ...prev, isPlaying: false }))}
       />
 
-      <ApiKeyModal
-        isOpen={uiHook.showApiKeyModal}
-        onClose={() => uiHook.setShowApiKeyModal(false)}
-        onSave={() => {}}
+      <SettingsModal
+        isOpen={uiHook.showSettingsModal}
+        onClose={() => uiHook.setShowSettingsModal(false)}
       />
       
       {/* Library Action Notification */}

@@ -32,7 +32,10 @@ interface ElectronAPI {
   fetchYouTubeMusicLyrics: (title: string, artist: string, album?: string) => Promise<{ lyrics: string; synced?: { time: number; text: string }[]; videoId?: string; title?: string; artist?: string } | null>;
   
   // Discord Rich Presence
+  getDiscordPresenceEnabled: () => Promise<boolean>;
+  setDiscordPresenceEnabled: (enabled: boolean) => Promise<boolean>;
   updateDiscordPresence: (data: DiscordPresenceData) => Promise<boolean>;
+  preloadDiscordCover: (data: { title: string; artist: string; album?: string }) => Promise<string | null>;
   clearDiscordPresence: () => Promise<boolean>;
   checkLdacSupport: () => Promise<boolean>;
   

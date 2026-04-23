@@ -1,8 +1,12 @@
 
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 import { SongState, PlaylistItem, SongMetadata, LyricsResult } from "../types";
 import { getLyrics } from "../../services/geminiService";
 import { extractMetadata } from "../../services/metadataService";
+import {
+  getDiscordPresenceEnabled,
+  subscribeDiscordPresenceEnabled,
+} from "../../services/discordPresenceSettings";
 
 const emptyLyrics: LyricsResult = { synced: [], plain: [], isSynced: false };
 const isElectron = !!(window as any).electronAPI;
@@ -25,6 +29,26 @@ export const useAudio = (
 ) => {
   const audioRef = useRef<HTMLAudioElement>(null);
   const lastPresenceBucketRef = useRef<string>("");
+  const [discordPresenceEnabled, setDiscordPresenceEnabled] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    void getDiscordPresenceEnabled().then((enabled) => {
+      if (isMounted) {
+        setDiscordPresenceEnabled(enabled);
+      }
+    });
+
+    const unsubscribe = subscribeDiscordPresenceEnabled((enabled) => {
+      setDiscordPresenceEnabled(enabled);
+    });
+
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
+  }, []);
 
   // Sync volume with audio element
   useEffect(() => {
@@ -319,6 +343,10 @@ export const useAudio = (
     const electronAPI = (window as any).electronAPI;
     if (!isElectron || !electronAPI?.updateDiscordPresence) return;
 
+    if (!discordPresenceEnabled) {
+      return;
+    }
+
     const audio = audioRef.current;
     const payload = {
       title: state.metadata.title,
@@ -340,11 +368,13 @@ export const useAudio = (
     state.isPlaying,
     state.currentSongIndex,
     state.duration, // Trigger update when new song's duration is loaded
+    discordPresenceEnabled,
   ]);
 
   useEffect(() => {
     const electronAPI = (window as any).electronAPI;
     if (!isElectron || !electronAPI?.updateDiscordPresence) return;
+    if (!discordPresenceEnabled) return;
     if (state.currentSongIndex < 0 || !state.metadata.title) return;
 
     const currentBucket = `${state.currentSongIndex}:${state.isPlaying}:${Math.floor(state.currentTime / 15)}`;
@@ -369,7 +399,18 @@ export const useAudio = (
     state.metadata.artist,
     state.metadata.album,
     state.metadata.cover,
+    discordPresenceEnabled,
   ]);
+
+  useEffect(() => {
+    const electronAPI = (window as any).electronAPI;
+    if (!isElectron || !electronAPI?.clearDiscordPresence) return;
+
+    if (!discordPresenceEnabled) {
+      lastPresenceBucketRef.current = "";
+      void electronAPI.clearDiscordPresence();
+    }
+  }, [discordPresenceEnabled]);
 
   // Media Session API
   useEffect(() => {

@@ -29,6 +29,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('fetch-youtube-music-lyrics', { title, artist, album }),
 
   // Discord Rich Presence
+  getDiscordPresenceEnabled: () => ipcRenderer.invoke('get-discord-presence-enabled'),
+  setDiscordPresenceEnabled: (enabled) => ipcRenderer.invoke('set-discord-presence-enabled', enabled),
   updateDiscordPresence: (data) => ipcRenderer.invoke('update-discord-presence', data),
   preloadDiscordCover: (data) => ipcRenderer.invoke('preload-discord-cover', data),
   clearDiscordPresence: () => ipcRenderer.invoke('clear-discord-presence'),

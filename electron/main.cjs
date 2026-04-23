@@ -32,6 +32,19 @@ let StatusDisplayType = null;
 let rpcHeartbeatInterval = null;
 
 async function initDiscordRPC() {
+  if (!isDiscordPresenceEnabled()) {
+    return;
+  }
+
+  if (!DISCORD_CLIENT_ID) {
+    console.warn("Discord RPC is disabled because DISCORD_CLIENT_ID is missing.");
+    return;
+  }
+
+  if (rpc) {
+    return;
+  }
+
   try {
     // Dynamic import for ESM module
     const rpcModule = await import("@xhayper/discord-rpc");
@@ -77,6 +90,10 @@ async function initDiscordRPC() {
     // Heartbeat: Reconnect every 10 seconds if not connected
     if (rpcHeartbeatInterval) clearInterval(rpcHeartbeatInterval);
     rpcHeartbeatInterval = setInterval(async () => {
+      if (!isDiscordPresenceEnabled()) {
+        return;
+      }
+
       if (!rpcReady) {
         console.log("Discord RPC Heartbeat: Attempting reconnection...");
         try {
@@ -1568,6 +1585,24 @@ async function updateDiscordPresence(data) {
   }
 }
 
+async function shutdownDiscordRPC() {
+  if (rpcHeartbeatInterval) {
+    clearInterval(rpcHeartbeatInterval);
+    rpcHeartbeatInterval = null;
+  }
+
+  rpcReady = false;
+
+  if (rpc) {
+    try {
+      await rpc.destroy();
+    } catch (_) {
+    }
+  }
+
+  rpc = null;
+}
+
 // Clear Discord Rich Presence
 function clearDiscordPresence() {
   lastPresence = null;
@@ -1602,6 +1637,11 @@ function saveConfig(config) {
   } catch (e) {
     console.error("Error saving config:", e);
   }
+}
+
+function isDiscordPresenceEnabled() {
+  const config = getConfig();
+  return config.discordPresenceEnabled !== false;
 }
 
 const audioExtensions = [
@@ -1730,21 +1770,15 @@ function createWindow() {
 
 app.whenReady().then(() => {
   createWindow();
-  initDiscordRPC();
+  if (isDiscordPresenceEnabled()) {
+    initDiscordRPC();
+  }
 });
 
 app.on("window-all-closed", () => {
   clearDiscordPresence();
   persistCoverCache();
-
-  // Clean up Discord RPC
-  if (rpcHeartbeatInterval) clearInterval(rpcHeartbeatInterval);
-
-  if (rpc) {
-    try {
-      rpc.destroy();
-    } catch (_) { }
-  }
+  shutdownDiscordRPC();
   if (process.platform !== "darwin") {
     app.quit();
   }
@@ -1758,12 +1792,20 @@ app.on("activate", () => {
 
 // IPC handler for Discord Rich Presence
 ipcMain.handle("update-discord-presence", (event, data) => {
+  if (!isDiscordPresenceEnabled()) {
+    return false;
+  }
+
   lastPresence = data; // Cache for reconnection
   updateDiscordPresence(data);
   return true;
 });
 
 ipcMain.handle("preload-discord-cover", async (event, data) => {
+  if (!isDiscordPresenceEnabled()) {
+    return null;
+  }
+
   if (!data?.title || !data?.artist || data.artist === "Unknown Artist") {
     return null;
   }
@@ -1779,6 +1821,25 @@ ipcMain.handle("preload-discord-cover", async (event, data) => {
 ipcMain.handle("clear-discord-presence", () => {
   clearDiscordPresence();
   return true;
+});
+
+ipcMain.handle("get-discord-presence-enabled", () => {
+  return isDiscordPresenceEnabled();
+});
+
+ipcMain.handle("set-discord-presence-enabled", async (event, enabled) => {
+  const config = getConfig();
+  config.discordPresenceEnabled = enabled !== false;
+  saveConfig(config);
+
+  if (config.discordPresenceEnabled) {
+    await initDiscordRPC();
+  } else {
+    clearDiscordPresence();
+    await shutdownDiscordRPC();
+  }
+
+  return config.discordPresenceEnabled;
 });
 
 // IPC handlers for API key management

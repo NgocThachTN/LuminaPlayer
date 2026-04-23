@@ -13,7 +13,7 @@ export const useUI = (metadata: SongMetadata) => {
   const [isRestoringLayout, setIsRestoringLayout] = useState(false);
   const [showLyrics, setShowLyrics] = useState(false);
   const [showVolumePopup, setShowVolumePopup] = useState(false);
-  const [showApiKeyModal, setShowApiKeyModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [libraryToastMessage, setLibraryToastMessage] = useState<string | null>(null);
   
   const [selectedAlbum, setSelectedAlbum] = useState<string | null>(null);
@@ -87,8 +87,8 @@ export const useUI = (metadata: SongMetadata) => {
     setShowLyrics,
     showVolumePopup,
     setShowVolumePopup,
-    showApiKeyModal,
-    setShowApiKeyModal,
+    showSettingsModal,
+    setShowSettingsModal,
     libraryToastMessage,
     setLibraryToastMessage,
     selectedAlbum,
