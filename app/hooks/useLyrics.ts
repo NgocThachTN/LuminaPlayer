@@ -45,7 +45,11 @@ const resolveActiveLyricIndex = (
   return findActiveLyricIndex(lines, currentTime);
 };
 
-export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioElement>) => {
+export const useLyrics = (
+  state: SongState,
+  audioRef: React.RefObject<HTMLAudioElement>,
+  isLyricsVisible: boolean
+) => {
   const [activeLyricIndex, setActiveLyricIndex] = useState(-1);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
   
@@ -179,6 +183,8 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
   }, [resetCachedLyricsLayout]);
 
   useEffect(() => {
+    if (!isLyricsVisible) return;
+
     const container = lyricsContainerRef.current;
     if (!container || typeof ResizeObserver === "undefined") return;
 
@@ -218,10 +224,12 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
         cancelAnimationFrame(resizeFrame);
       }
     };
-  }, [autoScrollEnabled, cancelPendingScroll, getScrollTargetIndex, performScroll, resetCachedLyricsLayout]);
+  }, [autoScrollEnabled, cancelPendingScroll, getScrollTargetIndex, isLyricsVisible, performScroll, resetCachedLyricsLayout]);
 
   // Exposed function to force scroll to active line
   const scrollToActiveLine = useCallback((instant = false) => {
+     if (!isLyricsVisible) return;
+
      const idx = getScrollTargetIndex();
      if (idx >= 0) {
         cancelPendingScroll();
@@ -230,12 +238,18 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
             performScroll(idx, instant ? "instant" : "smooth");
         });
      }
-  }, [cancelPendingScroll, getScrollTargetIndex, performScroll]);
+  }, [cancelPendingScroll, getScrollTargetIndex, isLyricsVisible, performScroll]);
 
   const resetLyricsLayout = useCallback(() => {
     resetCachedLyricsLayout();
-    scrollToActiveLine(true);
-  }, [resetCachedLyricsLayout, scrollToActiveLine]);
+    if (isLyricsVisible) {
+      const idx = getScrollTargetIndex();
+      if (idx >= 0) {
+        cancelPendingScroll();
+        performScroll(idx, "instant");
+      }
+    }
+  }, [cancelPendingScroll, getScrollTargetIndex, isLyricsVisible, performScroll, resetCachedLyricsLayout]);
 
   // Resume auto-scroll and snap to current line
   const resumeAutoScroll = useCallback(() => {
@@ -330,6 +344,13 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
 
   // CORE: Auto-scroll when activeLyricIndex changes
   useEffect(() => {
+    if (!isLyricsVisible) {
+      cancelPendingScroll();
+      setInitialScrollDone(false);
+      resetCachedLyricsLayout();
+      return;
+    }
+
     // Don't scroll if:
     // - No active lyric (index < 0)
     // - Auto-scroll disabled by user
@@ -358,7 +379,7 @@ export const useLyrics = (state: SongState, audioRef: React.RefObject<HTMLAudioE
          });
       });
     }
-  }, [activeLyricIndex, autoScrollEnabled, initialScrollDone, cancelPendingScroll, performScroll]);
+  }, [activeLyricIndex, autoScrollEnabled, cancelPendingScroll, initialScrollDone, isLyricsVisible, performScroll, resetCachedLyricsLayout]);
 
   // Reset states when song URL changes
   useEffect(() => {

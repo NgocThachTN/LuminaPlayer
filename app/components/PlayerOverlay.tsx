@@ -10,6 +10,7 @@ interface PlayerOverlayProps {
   dominantColor: string;
   isLdacSupported: boolean;
   isFullScreenPlayer: boolean;
+  isFullscreenTransitioning: boolean;
   setIsFullScreenPlayer: (v: boolean) => void;
   showLyrics: boolean;
   setShowLyrics: (v: boolean) => void;
@@ -36,7 +37,6 @@ interface PlayerOverlayProps {
   resumeAutoScroll: () => void;
   resetLyricsLayout: () => void;
   isLoading: boolean;
-  scrollToActiveLine: () => void;
   hasStarted: boolean;
   
   // UI helpers
@@ -178,6 +178,7 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
   dominantColor,
   isLdacSupported,
   isFullScreenPlayer,
+  isFullscreenTransitioning,
   setIsFullScreenPlayer,
   showLyrics,
   setShowLyrics,
@@ -202,7 +203,6 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
   resumeAutoScroll,
   resetLyricsLayout,
   isLoading,
-  scrollToActiveLine,
   hasStarted,
   setViewMode,
   setIsRestoringLayout,
@@ -212,14 +212,16 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
 
   const [coverPalette, setCoverPalette] = React.useState<string[]>([]);
   const [showQueue, setShowQueue] = React.useState(false);
-  const [isFullscreenTransitioning, setIsFullscreenTransitioning] = React.useState(false);
   const [renderLyricsPanel, setRenderLyricsPanel] = React.useState(showLyrics);
   const [renderQueuePanel, setRenderQueuePanel] = React.useState(showQueue);
   const [lyricsPanelReady, setLyricsPanelReady] = React.useState(!showLyrics);
   const isSidePanelOpen = showLyrics || showQueue;
   const isLyricsPanelVisible = isSidePanelOpen && showLyrics;
   const isQueuePanelVisible = isSidePanelOpen && showQueue;
-  const hasMountedFullscreenRef = React.useRef(false);
+  const sidePanelRef = React.useRef<HTMLDivElement>(null);
+  const wasSidePanelOpenRef = React.useRef(isSidePanelOpen);
+  const prevShowLyricsRef = React.useRef(showLyrics);
+  const prevIsFullScreenPlayerRef = React.useRef(isFullScreenPlayer);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -245,10 +247,10 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
   [dominantColor, coverPalette]);
 
   const overlayColumnTransitionStyle = React.useMemo(() => ({
-    transitionProperty: 'flex-basis, transform, opacity',
-    transitionDuration: '320ms, 300ms, 220ms',
-    transitionTimingFunction: 'cubic-bezier(0.32,0.72,0,1), ease-out, ease-out',
-    willChange: 'flex-basis, transform, opacity',
+    transitionProperty: 'flex-basis, opacity',
+    transitionDuration: '320ms, 220ms',
+    transitionTimingFunction: 'cubic-bezier(0.32,0.72,0,1), ease-out',
+    willChange: 'flex-basis, opacity',
   } as React.CSSProperties), []);
 
   const playerBackgroundStyle = React.useMemo(() => ({
@@ -268,37 +270,97 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
     '--cover-bg-glow-rgb': hexToRgbString(ambientPalette.glow),
   } as React.CSSProperties), [ambientPalette]);
 
-  // Prime lyrics off-screen, align them, then fade in once the panel width settles.
+  React.useEffect(() => {
+    wasSidePanelOpenRef.current = isSidePanelOpen;
+  }, [isSidePanelOpen]);
+
+  // Hold the lyrics text until the side panel has a stable width, then reveal it in-place.
   React.useLayoutEffect(() => {
+    const justOpenedLyrics = showLyrics && !prevShowLyricsRef.current;
+    const justOpenedOverlayWithLyrics = showLyrics && isFullScreenPlayer && !prevIsFullScreenPlayerRef.current;
+
+    prevShowLyricsRef.current = showLyrics;
+    prevIsFullScreenPlayerRef.current = isFullScreenPlayer;
+
     if (!showLyrics) {
       setLyricsPanelReady(false);
       return;
     }
 
+    if (!justOpenedLyrics && !justOpenedOverlayWithLyrics) {
+      return;
+    }
+
+    let isCancelled = false;
+    let revealRafOne: number | null = null;
+    let revealRafTwo: number | null = null;
+    let fallbackTimer: number | null = null;
+    const sidePanel = sidePanelRef.current;
+    const shouldWaitForPanelSettle = !wasSidePanelOpenRef.current || justOpenedOverlayWithLyrics;
+
     setLyricsPanelReady(false);
 
-    const initialFrame = window.requestAnimationFrame(() => {
-      resetLyricsLayout();
-    });
-    let finalFrame: number | null = null;
+    const revealLyricsPanel = () => {
+      if (isCancelled) return;
 
-    const timer = window.setTimeout(() => {
       resetLyricsLayout();
-
-      finalFrame = window.requestAnimationFrame(() => {
-        resetLyricsLayout();
-        setLyricsPanelReady(true);
+      revealRafOne = window.requestAnimationFrame(() => {
+        revealRafOne = null;
+        revealRafTwo = window.requestAnimationFrame(() => {
+          revealRafTwo = null;
+          if (!isCancelled) {
+            setLyricsPanelReady(true);
+          }
+        });
       });
-    }, 340);
+    };
+
+    if (!sidePanel || !shouldWaitForPanelSettle) {
+      revealLyricsPanel();
+    } else {
+      const handleTransitionEnd = (event: TransitionEvent) => {
+        if (event.target !== sidePanel || event.propertyName !== 'flex-basis') {
+          return;
+        }
+
+        sidePanel.removeEventListener('transitionend', handleTransitionEnd);
+        revealLyricsPanel();
+      };
+
+      sidePanel.addEventListener('transitionend', handleTransitionEnd);
+      fallbackTimer = window.setTimeout(() => {
+        sidePanel.removeEventListener('transitionend', handleTransitionEnd);
+        revealLyricsPanel();
+      }, 380);
+
+      return () => {
+        isCancelled = true;
+        sidePanel.removeEventListener('transitionend', handleTransitionEnd);
+        if (fallbackTimer !== null) {
+          window.clearTimeout(fallbackTimer);
+        }
+        if (revealRafOne !== null) {
+          window.cancelAnimationFrame(revealRafOne);
+        }
+        if (revealRafTwo !== null) {
+          window.cancelAnimationFrame(revealRafTwo);
+        }
+      };
+    }
 
     return () => {
-      window.cancelAnimationFrame(initialFrame);
-      if (finalFrame) {
-        window.cancelAnimationFrame(finalFrame);
+      isCancelled = true;
+      if (fallbackTimer !== null) {
+        window.clearTimeout(fallbackTimer);
       }
-      window.clearTimeout(timer);
+      if (revealRafOne !== null) {
+        window.cancelAnimationFrame(revealRafOne);
+      }
+      if (revealRafTwo !== null) {
+        window.cancelAnimationFrame(revealRafTwo);
+      }
     };
-  }, [showLyrics, resetLyricsLayout]);
+  }, [isFullScreenPlayer, showLyrics, resetLyricsLayout]);
 
   // Fix: Close volume popup when collapsing player
   React.useEffect(() => {
@@ -338,20 +400,6 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
 
     return () => window.clearTimeout(timer);
   }, [showQueue]);
-
-  React.useEffect(() => {
-    if (!hasMountedFullscreenRef.current) {
-      hasMountedFullscreenRef.current = true;
-      return;
-    }
-
-    setIsFullscreenTransitioning(true);
-    const timer = window.setTimeout(() => {
-      setIsFullscreenTransitioning(false);
-    }, 760);
-
-    return () => window.clearTimeout(timer);
-  }, [isFullScreenPlayer]);
 
   return (
     <>
@@ -402,9 +450,9 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
          <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/></svg>
        </button>
 
-       {/* Left Column Wrapper - smooth scale transition */}
+      {/* Left Column Wrapper - smooth scale transition */}
        <div
-         className={`h-full min-w-0 flex flex-col relative bg-transparent z-20 transform-gpu transition-transform duration-300 ease-out items-center justify-center ${isSidePanelOpen ? 'w-full scale-[0.98]' : 'w-full scale-100'}`}
+         className="h-full min-w-0 flex w-full flex-col items-center justify-center relative bg-transparent z-20"
          style={{
            ...overlayColumnTransitionStyle,
            flexBasis: isSidePanelOpen ? '45%' : '100%',
@@ -667,7 +715,8 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
       
       {/* Right Side of Overlay: lyrics/queue fade only to avoid missed renders */}
       <div
-        className={`md:flex h-full min-w-0 flex-col relative bg-transparent transform-gpu overflow-hidden ${isSidePanelOpen ? 'pointer-events-auto' : 'pointer-events-none'}`}
+        ref={sidePanelRef}
+        className={`md:flex h-full min-w-0 flex-col relative bg-transparent overflow-hidden ${isSidePanelOpen ? 'pointer-events-auto' : 'pointer-events-none'}`}
         style={{
           ...overlayColumnTransitionStyle,
           flexBasis: isSidePanelOpen ? '55%' : '0%',
@@ -686,12 +735,20 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
             aria-hidden={!isQueuePanelVisible}
           >
             {renderQueuePanel && (
-              <QueueView
-                items={queueItems}
-                currentSongIndex={state.currentSongIndex}
-                activeCover={state.metadata.cover}
-                onSelect={onQueueItemSelect}
-              />
+              <div
+                className={`h-full w-full transition-opacity duration-150 ease-out ${
+                  isQueuePanelVisible
+                    ? 'opacity-100'
+                    : 'opacity-0'
+                }`}
+              >
+                <QueueView
+                  items={queueItems}
+                  currentSongIndex={state.currentSongIndex}
+                  activeCover={state.metadata.cover}
+                  onSelect={onQueueItemSelect}
+                />
+              </div>
             )}
           </div>
 
@@ -706,6 +763,9 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
                     ? 'opacity-100'
                     : 'opacity-0'
                 }`}
+                style={{
+                  visibility: isLyricsPanelVisible && lyricsPanelReady ? 'visible' : 'hidden',
+                }}
               >
                 <LyricsView 
                   lyrics={state.lyrics}

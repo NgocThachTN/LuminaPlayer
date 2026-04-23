@@ -197,12 +197,6 @@ export const LyricsView = memo(({
     const effectiveIndex = activeLyricIndex;
     const isAtStart = effectiveIndex === -1;
 
-    // Only auto-scroll to top when at start state AND auto-scroll is enabled
-    // This allows users to manually scroll even before the first lyric starts
-    if (isAtStart && autoScrollEnabled && lyricsContainerRef.current && lyricsContainerRef.current.scrollTop !== 0) {
-      lyricsContainerRef.current.scrollTop = 0;
-    }
-
     // Use consistent offset for both CSS and scroll calculations
     const LYRICS_TOP_OFFSET = '26vh';
 

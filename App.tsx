@@ -1,5 +1,5 @@
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { startTransition, useCallback, useEffect, useState } from 'react';
 import { SettingsModal } from './components/SettingsModal';
 import { usePlayer } from './app/hooks/usePlayer';
 import { useLibrary } from './app/hooks/useLibrary';
@@ -121,14 +121,35 @@ const App: React.FC = () => {
     }
   };
   
-  // 4. Lyrics & Scroll
-  const lyricsHook = useLyrics(state, audioHook.audioRef);
-  
-  // 5. UI State
+  // 4. UI State
   const uiHook = useUI(state.metadata);
+  
+  // 5. Lyrics & Scroll
+  const lyricsHook = useLyrics(state, audioHook.audioRef, uiHook.showLyrics);
   const [isDocumentFullscreen, setIsDocumentFullscreen] = useState(false);
   const [isFullscreenTransitioning, setIsFullscreenTransitioning] = useState(false);
   const hasMountedFullscreenRef = React.useRef(false);
+
+  const requestDocumentFullscreen = useCallback(async () => {
+    if (document.fullscreenElement || !document.documentElement.requestFullscreen) {
+      return true;
+    }
+
+    try {
+      await document.documentElement.requestFullscreen();
+      return true;
+    } catch {
+      // Some browsers may block fullscreen outside trusted app windows.
+      return false;
+    }
+  }, []);
+
+  const openLyricsPlayerView = useCallback(() => {
+    startTransition(() => {
+      uiHook.setShowLyrics(true);
+      uiHook.setIsFullScreenPlayer(true);
+    });
+  }, [uiHook.setIsFullScreenPlayer, uiHook.setShowLyrics]);
 
   useEffect(() => {
     if (!uiHook.libraryToastMessage) return;
@@ -168,25 +189,27 @@ const App: React.FC = () => {
   }, [uiHook.isFullScreenPlayer]);
 
   const openLyricsFullscreen = useCallback(() => {
-    uiHook.setIsFullScreenPlayer(true);
+    startTransition(() => {
+      uiHook.setShowLyrics(true);
+      uiHook.setIsFullScreenPlayer(true);
+    });
 
-    if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
-      document.documentElement.requestFullscreen().catch(() => {
-        // Some browsers may block fullscreen outside trusted app windows.
-      });
-    }
-  }, [uiHook.setIsFullScreenPlayer]);
+    window.requestAnimationFrame(() => {
+      void requestDocumentFullscreen();
+    });
+  }, [requestDocumentFullscreen, uiHook.setIsFullScreenPlayer, uiHook.setShowLyrics]);
 
   const openPlayerWithLyrics = useCallback(() => {
-    uiHook.setShowLyrics(true);
-    uiHook.setIsFullScreenPlayer(true);
+    openLyricsPlayerView();
 
-    if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
-      document.documentElement.requestFullscreen().catch(() => {
-        // Some browsers may block fullscreen outside trusted app windows.
-      });
+    if (document.fullscreenElement) {
+      return;
     }
-  }, [uiHook.setIsFullScreenPlayer, uiHook.setShowLyrics]);
+
+    window.requestAnimationFrame(() => {
+      void requestDocumentFullscreen();
+    });
+  }, [openLyricsPlayerView, requestDocumentFullscreen]);
 
   const exitLyricsFullscreen = useCallback(() => {
     if (document.fullscreenElement && document.exitFullscreen) {
@@ -232,6 +255,7 @@ const App: React.FC = () => {
             dominantColor={uiHook.dominantColor}
             isLdacSupported={uiHook.isLdacSupported}
             isFullScreenPlayer={uiHook.isFullScreenPlayer}
+            isFullscreenTransitioning={isFullscreenTransitioning}
             setIsFullScreenPlayer={uiHook.setIsFullScreenPlayer}
             showLyrics={uiHook.showLyrics}
             setShowLyrics={uiHook.setShowLyrics}
@@ -262,7 +286,6 @@ const App: React.FC = () => {
             setViewMode={uiHook.setViewMode}
             setIsRestoringLayout={uiHook.setIsRestoringLayout}
             viewMode={uiHook.viewMode}
-            scrollToActiveLine={lyricsHook.scrollToActiveLine}
          />
 
          {/* Library View (Playlist, Albums, Artists) */}
