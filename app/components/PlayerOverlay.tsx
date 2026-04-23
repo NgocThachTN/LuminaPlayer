@@ -215,6 +215,7 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
   const [isFullscreenTransitioning, setIsFullscreenTransitioning] = React.useState(false);
   const [renderLyricsPanel, setRenderLyricsPanel] = React.useState(showLyrics);
   const [renderQueuePanel, setRenderQueuePanel] = React.useState(showQueue);
+  const [lyricsPanelReady, setLyricsPanelReady] = React.useState(!showLyrics);
   const isSidePanelOpen = showLyrics || showQueue;
   const isLyricsPanelVisible = isSidePanelOpen && showLyrics;
   const isQueuePanelVisible = isSidePanelOpen && showQueue;
@@ -267,24 +268,37 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
     '--cover-bg-glow-rgb': hexToRgbString(ambientPalette.glow),
   } as React.CSSProperties), [ambientPalette]);
 
-  // Re-sync lyrics layout when opening after the side panel expands.
+  // Prime lyrics off-screen, align them, then fade in once the panel width settles.
   React.useLayoutEffect(() => {
-    if (!showLyrics || !autoScrollEnabled) return;
+    if (!showLyrics) {
+      setLyricsPanelReady(false);
+      return;
+    }
 
-    resetLyricsLayout();
+    setLyricsPanelReady(false);
 
-    const frame = window.requestAnimationFrame(() => {
+    const initialFrame = window.requestAnimationFrame(() => {
       resetLyricsLayout();
     });
+    let finalFrame: number | null = null;
+
     const timer = window.setTimeout(() => {
       resetLyricsLayout();
-    }, 280);
+
+      finalFrame = window.requestAnimationFrame(() => {
+        resetLyricsLayout();
+        setLyricsPanelReady(true);
+      });
+    }, 340);
 
     return () => {
-      window.cancelAnimationFrame(frame);
+      window.cancelAnimationFrame(initialFrame);
+      if (finalFrame) {
+        window.cancelAnimationFrame(finalFrame);
+      }
       window.clearTimeout(timer);
     };
-  }, [showLyrics, autoScrollEnabled, resetLyricsLayout]);
+  }, [showLyrics, resetLyricsLayout]);
 
   // Fix: Close volume popup when collapsing player
   React.useEffect(() => {
@@ -686,19 +700,27 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
             aria-hidden={!isLyricsPanelVisible}
           >
             {renderLyricsPanel && (
-              <LyricsView 
-                lyrics={state.lyrics}
-                isLoading={isLoading}
-                activeLyricIndex={activeLyricIndex}
-                autoScrollEnabled={autoScrollEnabled}
-                stopAutoScroll={stopAutoScroll}
-                resumeAutoScroll={resumeAutoScroll}
-                lyricsContainerRef={lyricsContainerRef}
-                audioRef={audioRef}
-                file={state.file}
-                hasStarted={hasStarted}
-                dominantColor={dominantColor}
-              />
+              <div
+                className={`h-full w-full transition-opacity duration-150 ease-out ${
+                  isLyricsPanelVisible && lyricsPanelReady
+                    ? 'opacity-100'
+                    : 'opacity-0'
+                }`}
+              >
+                <LyricsView 
+                  lyrics={state.lyrics}
+                  isLoading={isLoading}
+                  activeLyricIndex={activeLyricIndex}
+                  autoScrollEnabled={autoScrollEnabled}
+                  stopAutoScroll={stopAutoScroll}
+                  resumeAutoScroll={resumeAutoScroll}
+                  lyricsContainerRef={lyricsContainerRef}
+                  audioRef={audioRef}
+                  file={state.file}
+                  hasStarted={hasStarted}
+                  dominantColor={dominantColor}
+                />
+              </div>
             )}
           </div>
         </div>
