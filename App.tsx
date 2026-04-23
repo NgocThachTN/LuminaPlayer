@@ -125,7 +125,8 @@ const App: React.FC = () => {
   const uiHook = useUI(state.metadata);
   
   // 5. Lyrics & Scroll
-  const lyricsHook = useLyrics(state, audioHook.audioRef, uiHook.showLyrics);
+  const areLyricsVisible = uiHook.showLyrics && uiHook.isFullScreenPlayer;
+  const lyricsHook = useLyrics(state, audioHook.audioRef, areLyricsVisible);
   const [isDocumentFullscreen, setIsDocumentFullscreen] = useState(false);
   const [isFullscreenTransitioning, setIsFullscreenTransitioning] = useState(false);
   const hasMountedFullscreenRef = React.useRef(false);

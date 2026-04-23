@@ -401,6 +401,32 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
     return () => window.clearTimeout(timer);
   }, [showQueue]);
 
+  React.useEffect(() => {
+    if (!isLyricsPanelVisible || !renderLyricsPanel || !lyricsPanelReady) {
+      return;
+    }
+
+    let rafOne: number | null = null;
+    let rafTwo: number | null = null;
+
+    rafOne = window.requestAnimationFrame(() => {
+      rafOne = null;
+      rafTwo = window.requestAnimationFrame(() => {
+        rafTwo = null;
+        resetLyricsLayout();
+      });
+    });
+
+    return () => {
+      if (rafOne !== null) {
+        window.cancelAnimationFrame(rafOne);
+      }
+      if (rafTwo !== null) {
+        window.cancelAnimationFrame(rafTwo);
+      }
+    };
+  }, [isDocumentFullscreen, isLyricsPanelVisible, lyricsPanelReady, renderLyricsPanel, resetLyricsLayout]);
+
   return (
     <>
     <div 
