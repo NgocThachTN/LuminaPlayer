@@ -291,7 +291,7 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
     wasSidePanelOpenRef.current = isSidePanelOpen;
   }, [isSidePanelOpen]);
 
-  // Hold the lyrics text until the side panel has a stable width, then reveal it in-place.
+  // Keep lyrics hidden until the side panel has settled and the scroll snap is already applied.
   React.useLayoutEffect(() => {
     const justOpenedLyrics = showLyrics && !prevShowLyricsRef.current;
     const justOpenedOverlayWithLyrics = showLyrics && isFullScreenPlayer && !prevIsFullScreenPlayerRef.current;
@@ -309,10 +309,13 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
     }
 
     let isCancelled = false;
+    let settleRaf: number | null = null;
     let revealRafOne: number | null = null;
     let revealRafTwo: number | null = null;
-    let fallbackTimer: number | null = null;
-    const sidePanel = sidePanelRef.current;
+    let lastWidth = -1;
+    let stableFrameCount = 0;
+    let attemptCount = 0;
+    const maxAttempts = 36;
     const shouldWaitForPanelSettle = !wasSidePanelOpenRef.current || justOpenedOverlayWithLyrics;
 
     setLyricsPanelReady(false);
@@ -332,43 +335,46 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
       });
     };
 
-    if (!sidePanel || !shouldWaitForPanelSettle) {
-      revealLyricsPanel();
-    } else {
-      const handleTransitionEnd = (event: TransitionEvent) => {
-        if (event.target !== sidePanel || event.propertyName !== 'flex-basis') {
-          return;
-        }
+    const waitForStablePanel = () => {
+      if (isCancelled) return;
 
-        sidePanel.removeEventListener('transitionend', handleTransitionEnd);
+      attemptCount += 1;
+      const sidePanel = sidePanelRef.current;
+      const lyricsContainer = lyricsContainerRef.current;
+      const panelWidth = sidePanel?.getBoundingClientRect().width ?? 0;
+      const widthChanged = Math.abs(panelWidth - lastWidth);
+      const hasMountedLyrics =
+        !!lyricsContainer &&
+        lyricsContainer.clientWidth > 0 &&
+        lyricsContainer.clientHeight > 0;
+
+      if (!shouldWaitForPanelSettle && hasMountedLyrics) {
         revealLyricsPanel();
-      };
+        return;
+      }
 
-      sidePanel.addEventListener('transitionend', handleTransitionEnd);
-      fallbackTimer = window.setTimeout(() => {
-        sidePanel.removeEventListener('transitionend', handleTransitionEnd);
+      if (hasMountedLyrics && panelWidth > 0 && widthChanged < 1) {
+        stableFrameCount += 1;
+      } else {
+        stableFrameCount = 0;
+      }
+
+      lastWidth = panelWidth;
+
+      if ((hasMountedLyrics && stableFrameCount >= 2) || attemptCount >= maxAttempts) {
         revealLyricsPanel();
-      }, 380);
+        return;
+      }
 
-      return () => {
-        isCancelled = true;
-        sidePanel.removeEventListener('transitionend', handleTransitionEnd);
-        if (fallbackTimer !== null) {
-          window.clearTimeout(fallbackTimer);
-        }
-        if (revealRafOne !== null) {
-          window.cancelAnimationFrame(revealRafOne);
-        }
-        if (revealRafTwo !== null) {
-          window.cancelAnimationFrame(revealRafTwo);
-        }
-      };
-    }
+      settleRaf = window.requestAnimationFrame(waitForStablePanel);
+    };
+
+    settleRaf = window.requestAnimationFrame(waitForStablePanel);
 
     return () => {
       isCancelled = true;
-      if (fallbackTimer !== null) {
-        window.clearTimeout(fallbackTimer);
+      if (settleRaf !== null) {
+        window.cancelAnimationFrame(settleRaf);
       }
       if (revealRafOne !== null) {
         window.cancelAnimationFrame(revealRafOne);
@@ -377,7 +383,7 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
         window.cancelAnimationFrame(revealRafTwo);
       }
     };
-  }, [isFullScreenPlayer, showLyrics, resetLyricsLayout]);
+  }, [isFullScreenPlayer, lyricsContainerRef, resetLyricsLayout, showLyrics]);
 
   // Fix: Close volume popup when collapsing player
   React.useEffect(() => {
@@ -828,12 +834,12 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
             {renderLyricsPanel && (
               <div
                 className={`h-full w-full transition-opacity duration-150 ease-out ${
-                  isLyricsPanelVisible
+                  isLyricsPanelVisible && lyricsPanelReady
                     ? 'opacity-100'
                     : 'opacity-0'
                 }`}
                 style={{
-                  visibility: isLyricsPanelVisible ? 'visible' : 'hidden',
+                  visibility: isLyricsPanelVisible && lyricsPanelReady ? 'visible' : 'hidden',
                 }}
               >
                 <LyricsView 
