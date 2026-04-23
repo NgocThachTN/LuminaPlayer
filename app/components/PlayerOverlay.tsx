@@ -253,6 +253,23 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
     willChange: 'flex-basis, opacity',
   } as React.CSSProperties), []);
 
+  const lyricsContentKey = React.useMemo(
+    () => [
+      state.url,
+      state.currentSongIndex,
+      state.lyrics.isSynced ? 'synced' : 'plain',
+      state.lyrics.synced.length,
+      state.lyrics.plain.length,
+    ].join('|'),
+    [
+      state.currentSongIndex,
+      state.lyrics.isSynced,
+      state.lyrics.plain.length,
+      state.lyrics.synced.length,
+      state.url,
+    ]
+  );
+
   const playerBackgroundStyle = React.useMemo(() => ({
     backgroundColor: ambientPalette.base,
     '--cover-bg-base': ambientPalette.base,
@@ -426,6 +443,32 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
       }
     };
   }, [isDocumentFullscreen, isLyricsPanelVisible, lyricsPanelReady, renderLyricsPanel, resetLyricsLayout]);
+
+  React.useEffect(() => {
+    if (!isLyricsPanelVisible || !renderLyricsPanel || !lyricsPanelReady) {
+      return;
+    }
+
+    let rafOne: number | null = null;
+    let rafTwo: number | null = null;
+
+    rafOne = window.requestAnimationFrame(() => {
+      rafOne = null;
+      rafTwo = window.requestAnimationFrame(() => {
+        rafTwo = null;
+        resetLyricsLayout();
+      });
+    });
+
+    return () => {
+      if (rafOne !== null) {
+        window.cancelAnimationFrame(rafOne);
+      }
+      if (rafTwo !== null) {
+        window.cancelAnimationFrame(rafTwo);
+      }
+    };
+  }, [isLyricsPanelVisible, lyricsContentKey, lyricsPanelReady, renderLyricsPanel, resetLyricsLayout]);
 
   return (
     <>
@@ -794,6 +837,7 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
                 }}
               >
                 <LyricsView 
+                  key={lyricsContentKey}
                   lyrics={state.lyrics}
                   isLoading={isLoading}
                   activeLyricIndex={activeLyricIndex}

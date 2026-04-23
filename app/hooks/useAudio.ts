@@ -29,6 +29,7 @@ export const useAudio = (
 ) => {
   const audioRef = useRef<HTMLAudioElement>(null);
   const lastPresenceBucketRef = useRef<string>("");
+  const activeTrackLoadTokenRef = useRef(0);
   const [discordPresenceEnabled, setDiscordPresenceEnabled] = useState(true);
 
   useEffect(() => {
@@ -77,6 +78,8 @@ export const useAudio = (
 
   // Play from playlist item (supports both File and path)
   const playSongFromItem = async (item: PlaylistItem, index: number) => {
+    const trackLoadToken = ++activeTrackLoadTokenRef.current;
+
     // Scroll lyrics to top is handled by useLyrics effect on song change
     
     // Get format from filename
@@ -190,6 +193,10 @@ export const useAudio = (
         console.error("Error extracting metadata:", e);
       }
 
+      if (activeTrackLoadTokenRef.current !== trackLoadToken) {
+        return;
+      }
+
       if (isElectron && electronAPI?.preloadDiscordCover && finalArtist !== "Unknown Artist") {
         void electronAPI.preloadDiscordCover({
           title: finalTitle,
@@ -199,10 +206,7 @@ export const useAudio = (
       }
 
       setState((prev) => {
-        if (prev.currentSongIndex === index) {
-          return { ...prev, metadata: finalMetadata };
-        }
-        return prev;
+        return { ...prev, metadata: finalMetadata };
       });
 
       try {
@@ -211,17 +215,21 @@ export const useAudio = (
           finalArtist,
           finalMetadata.album || metadataAlbum
         );
+
+        if (activeTrackLoadTokenRef.current !== trackLoadToken) {
+          return;
+        }
+
         setState((prev) => {
-          if (prev.currentSongIndex === index) {
-            return { ...prev, lyrics };
-          }
-          return prev;
+          return { ...prev, lyrics };
         });
       } catch (e) {
         console.error("Error loading lyrics:", e);
       }
 
-      setIsLoading(false);
+      if (activeTrackLoadTokenRef.current === trackLoadToken) {
+        setIsLoading(false);
+      }
     };
 
     loadMetadataAndLyrics();
