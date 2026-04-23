@@ -64,19 +64,39 @@ const App: React.FC = () => {
   // 2.5 Queue System
   // The playback queue. defaults to all playlist items.
   const [queue, setQueue] = React.useState<typeof playlistItems>([]);
+  const queueKey = React.useCallback((item: typeof playlistItems[number]) => item.path || item.name, []);
 
   // Sync queue with playlistItems ONLY when playlistItems changes AND 
   // we haven't explicitly set a custom queue (like an album).
   // actually, simplified: Initialize queue with playlistItems.
   // When user clicks "All Songs" or imports, we reset queue to all items.
   useEffect(() => {
-     // If the queue is empty or we just imported, sync it. 
-     // For now, let's just keep them in sync if we are in "Playlist" mode implicitly?
-     // No, explicit is better.
+     // Initial queue setup
      if (queue.length === 0 && playlistItems.length > 0) {
         setQueue(playlistItems);
+        return;
      }
-  }, [playlistItems]);
+
+     // Keep metadata/cover in queue fresh as library metadata finishes loading.
+     if (queue.length === 0 || playlistItems.length === 0) return;
+     const playlistMap = new Map(playlistItems.map((item) => [queueKey(item), item]));
+
+     setQueue((prevQueue) => {
+       let changed = false;
+       const merged = prevQueue.map((item) => {
+         const latest = playlistMap.get(queueKey(item));
+         if (!latest) return item;
+
+         if (latest.metadata !== item.metadata) {
+           changed = true;
+           return { ...item, metadata: latest.metadata };
+         }
+         return item;
+       });
+
+       return changed ? merged : prevQueue;
+     });
+  }, [playlistItems, queue.length, queueKey]);
 
   // 3. Audio Control (Pass QUEUE instead of playlistItems)
   const audioHook = useAudio(state, setState, queue, volume, setAudioInfo, setIsLoading);
@@ -189,6 +209,8 @@ const App: React.FC = () => {
             togglePlay={audioHook.togglePlay}
             playNext={audioHook.playNext}
             playPrevious={audioHook.playPrevious}
+            queueItems={queue}
+            onQueueItemSelect={audioHook.handleSongSelect}
             audioRef={audioHook.audioRef}
             setState={setState}
             // Lyrics props

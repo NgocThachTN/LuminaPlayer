@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { SongState } from '../types';
+import { PlaylistItem, SongState } from '../types';
 import { adjustBrightness, ensureDarkColor, getColorPalette } from '../../services/colorService';
 import { LyricsView } from './LyricsView';
 
@@ -23,6 +23,8 @@ interface PlayerOverlayProps {
   togglePlay: () => void;
   playNext: () => void;
   playPrevious: () => void;
+  queueItems: PlaylistItem[];
+  onQueueItemSelect: (index: number) => void;
   audioRef: React.RefObject<HTMLAudioElement>;
   setState: React.Dispatch<React.SetStateAction<SongState>>;
   
@@ -71,6 +73,95 @@ const buildAmbientPalette = (dominantColor: string, coverPalette: string[]): Amb
   return { base, primary, secondary, accent, glow, shadow };
 };
 
+interface QueueViewProps {
+  items: PlaylistItem[];
+  currentSongIndex: number;
+  activeCover?: string;
+  onSelect: (index: number) => void;
+}
+
+const parseTrackFromName = (name: string) => {
+  const base = name.replace(/\.[^/.]+$/, "");
+  const dashIndex = base.indexOf(" - ");
+  if (dashIndex > 0) {
+    return {
+      artist: base.slice(0, dashIndex).trim(),
+      title: base.slice(dashIndex + 3).trim(),
+    };
+  }
+  return { artist: "Unknown Artist", title: base };
+};
+
+const QueueView: React.FC<QueueViewProps> = ({ items, currentSongIndex, activeCover, onSelect }) => {
+  return (
+    <div className="h-full w-full overflow-y-auto lyrics-scroll px-6 py-8 md:px-10 md:py-10">
+      <div className="mb-8">
+        <h2 className="text-2xl font-bold text-white tracking-normal">Playlist</h2>
+        <p className="mt-1 text-xs uppercase tracking-[0.24em] text-white/35">
+          {items.length} tracks
+        </p>
+      </div>
+
+      {items.length === 0 ? (
+        <div className="h-[60%] flex flex-col items-center justify-center gap-4 text-white/25">
+          <svg className="w-12 h-12" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M4 6h12v2H4V6zm0 5h12v2H4v-2zm0 5h8v2H4v-2zm14-4.5V6h2v5.5c.6-.35 1.3-.5 2-.5v2c-1.1 0-2 .9-2 2v1c0 1.66-1.34 3-3 3s-3-1.34-3-3 1.34-3 3-3c.35 0 .69.06 1 .17V11.5z" />
+          </svg>
+          <p className="text-xs uppercase tracking-[0.3em]">No Tracks</p>
+        </div>
+      ) : (
+        <div className="space-y-2 pb-12">
+          {items.map((item, index) => {
+            const metadata = item.metadata;
+            const parsed = parseTrackFromName(item.name);
+            const title = metadata?.title && metadata.title !== "Unknown Title" ? metadata.title : parsed.title;
+            const artist = metadata?.artist && metadata.artist !== "Unknown Artist" ? metadata.artist : parsed.artist;
+            const album = metadata?.album || "Unknown Album";
+            const isActive = index === currentSongIndex;
+            const cover = metadata?.cover || (isActive ? activeCover : undefined);
+
+            return (
+              <button
+                key={`${item.path || item.name}-${index}`}
+                onClick={() => onSelect(index)}
+                className={`w-full min-w-0 flex items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors ${
+                  isActive ? 'bg-white/12 text-white' : 'text-white/62 hover:bg-white/8 hover:text-white'
+                }`}
+              >
+                <div className="w-11 h-11 shrink-0 rounded-md overflow-hidden bg-white/8 border border-white/8 flex items-center justify-center">
+                  {cover ? (
+                    <img src={cover} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <svg className="w-5 h-5 text-white/25" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
+                    </svg>
+                  )}
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    {isActive && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#f1c40f] shrink-0" />
+                    )}
+                    <p className="truncate text-sm font-semibold leading-tight">{title}</p>
+                  </div>
+                  <p className="mt-1 truncate text-xs text-white/42">
+                    {artist} <span className="mx-1 opacity-60">-</span> {album}
+                  </p>
+                </div>
+
+                <span className="w-8 shrink-0 text-right text-[11px] text-white/30">
+                  {metadata?.duration ? formatTime(metadata.duration) : ""}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
   state,
   audioInfo,
@@ -90,6 +181,8 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
   togglePlay,
   playNext,
   playPrevious,
+  queueItems,
+  onQueueItemSelect,
   audioRef,
   setState,
   lyricsContainerRef,
@@ -106,6 +199,8 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
 }) => {
 
   const [coverPalette, setCoverPalette] = React.useState<string[]>([]);
+  const [showQueue, setShowQueue] = React.useState(false);
+  const isSidePanelOpen = showLyrics || showQueue;
 
   React.useEffect(() => {
     let cancelled = false;
@@ -154,6 +249,12 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
       setShowVolumePopup(false);
     }
   }, [isFullScreenPlayer, showVolumePopup, setShowVolumePopup]);
+
+  React.useEffect(() => {
+    if (showLyrics) {
+      setShowQueue(false);
+    }
+  }, [showLyrics]);
 
   return (
     <>
@@ -204,7 +305,7 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
        </button>
 
        {/* Left Column Wrapper - smooth scale transition */}
-       <div className={`h-full flex flex-col relative bg-transparent z-20 transform-gpu transition-transform duration-300 ease-out items-center justify-center ${showLyrics ? 'w-full md:flex-[0_0_45%] scale-[0.98]' : 'w-full md:flex-[1_0_100%] scale-100'}`}>
+       <div className={`h-full flex flex-col relative bg-transparent z-20 transform-gpu transition-transform duration-300 ease-out items-center justify-center ${isSidePanelOpen ? 'w-full md:flex-[0_0_45%] scale-[0.98]' : 'w-full md:flex-[1_0_100%] scale-100'}`}>
 
       {/* Top: Album Art */}
       <div className="w-full flex-none flex items-center justify-center p-8 pb-10">
@@ -301,9 +402,10 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
              <span className="w-8 text-left">-{formatTime((state.duration || 0) - state.currentTime)}</span>
          </div>
 
-         <div className="w-full max-w-[440px] mx-auto mt-2 flex items-center justify-between relative">
+         <div className="w-full max-w-[440px] mx-auto mt-2 relative h-20">
             {/* Volume Control */}
-            <div className="flex-none relative">
+            <div className="absolute left-0 top-1/2 -translate-y-1/2 flex items-center gap-2">
+              <div className="relative">
                 <button 
                   onClick={() => setShowVolumePopup(!showVolumePopup)}
                   onWheel={(e) => {
@@ -362,28 +464,42 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
                     </div>
                   </>
                 )}
+              </div>
+
+              <button
+                onClick={() => {
+                  setShowQueue((current) => !current);
+                  setShowLyrics(false);
+                }}
+                className={`transition-all duration-200 p-2 rounded-lg ${showQueue ? 'text-white bg-white/10' : 'text-white/50 hover:text-white hover:bg-white/10'}`}
+                title={showQueue ? "Hide Playlist" : "Show Playlist"}
+              >
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M4 6h12v2H4V6zm0 5h12v2H4v-2zm0 5h8v2H4v-2zm14-4.5V6h2v5.5c.6-.35 1.3-.5 2-.5v2c-1.1 0-2 .9-2 2v1c0 1.66-1.34 3-3 3s-3-1.34-3-3 1.34-3 3-3c.35 0 .69.06 1 .17V11.5zM17 17c.55 0 1-.45 1-1s-.45-1-1-1-1 .45-1 1 .45 1 1 1z"/>
+                </svg>
+              </button>
             </div>
 
             {/* Center Controls */}
-            <div className="flex items-center justify-center gap-6">
+            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 grid grid-cols-[36px_48px_72px_48px_36px] items-center justify-items-center gap-2">
               {/* Shuffle */}
               <button 
                 onClick={() => setState(prev => ({ ...prev, isShuffle: !prev.isShuffle }))}
-                className={`transition-colors p-2 ${state.isShuffle ? 'text-[#f1c40f]' : 'text-white/50 hover:text-white'}`}
+                className={`w-9 h-9 flex items-center justify-center transition-colors ${state.isShuffle ? 'text-[#f1c40f]' : 'text-white/50 hover:text-white'}`}
                 title="Shuffle"
               >
                 <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></svg>
               </button>
 
               {/* Prev */}
-              <button onClick={playPrevious} className="text-white hover:text-white/80 transition-colors p-2">
+              <button onClick={playPrevious} className="w-12 h-12 flex items-center justify-center text-white hover:text-white/80 transition-colors">
                 <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" /></svg>
               </button>
 
               {/* Play/Pause */}
               <button 
                 onClick={togglePlay} 
-                className="text-white hover:scale-110 transition-transform p-2 drop-shadow-lg"
+                className="w-[72px] h-[72px] flex items-center justify-center text-white hover:scale-110 transition-transform drop-shadow-lg"
               >
                 {state.isPlaying ? (
                   <svg className="w-16 h-16" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
@@ -393,7 +509,7 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
               </button>
 
               {/* Next */}
-              <button onClick={playNext} className="text-white hover:text-white/80 transition-colors p-2">
+              <button onClick={playNext} className="w-12 h-12 flex items-center justify-center text-white hover:text-white/80 transition-colors">
                 <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" /></svg>
               </button>
 
@@ -404,7 +520,7 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
                   const nextIndex = (modes.indexOf(prev.repeatMode) + 1) % modes.length;
                   return { ...prev, repeatMode: modes[nextIndex] };
                 })}
-                className={`transition-colors p-2 ${state.repeatMode !== 'off' ? 'text-[#f1c40f]' : 'text-white/50 hover:text-white'}`}
+                className={`w-9 h-9 flex items-center justify-center transition-colors ${state.repeatMode !== 'off' ? 'text-[#f1c40f]' : 'text-white/50 hover:text-white'}`}
                 title={`Repeat: ${state.repeatMode}`}
               >
                 {state.repeatMode === 'one' ? (
@@ -416,7 +532,7 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
             </div>
 
             {/* Lyrics/Fullscreen Buttons */}
-            <div className="flex-none flex items-center gap-2">
+            <div className="absolute right-0 top-1/2 -translate-y-1/2 flex items-center gap-2">
                 <button
                   onClick={isDocumentFullscreen ? exitLyricsFullscreen : openLyricsFullscreen}
                   className="transition-all duration-200 p-2 rounded-lg text-white/50 hover:text-white hover:bg-white/10"
@@ -429,7 +545,10 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
                   )}
                 </button>
                 <button 
-                  onClick={() => setShowLyrics(!showLyrics)}
+                  onClick={() => {
+                    setShowQueue(false);
+                    setShowLyrics(!showLyrics);
+                  }}
                   className={`transition-all duration-200 p-2 rounded-lg ${showLyrics ? 'text-white bg-white/10' : 'text-white/50 hover:text-white'}`}
                   title={showLyrics ? "Hide Lyrics" : "Show Lyrics"}
                 >
@@ -441,23 +560,31 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
     </div>
       
       {/* Right Side of Overlay: Lyrics - smooth fade and scale */}
-      <div className={`md:flex h-full flex-col relative bg-transparent transform-gpu overflow-hidden ${showLyrics ? 'flex-[1_0_55%]' : 'flex-[0_0_0px]'}`}>
-        <div className={`h-full w-full transform-gpu transition-all duration-300 ease-out ${showLyrics ? 'opacity-100 translate-x-0 scale-100' : 'opacity-0 translate-x-8 scale-95'}`}>
+      <div className={`md:flex h-full flex-col relative bg-transparent transform-gpu overflow-hidden ${isSidePanelOpen ? 'flex-[1_0_55%]' : 'flex-[0_0_0px]'}`}>
+        <div className={`h-full w-full transform-gpu transition-all duration-300 ease-out ${isSidePanelOpen ? 'opacity-100 translate-x-0 scale-100' : 'opacity-0 translate-x-8 scale-95'}`}>
 
-
-          <LyricsView 
-            lyrics={state.lyrics}
-            isLoading={isLoading}
-            activeLyricIndex={activeLyricIndex}
-            autoScrollEnabled={autoScrollEnabled}
-            stopAutoScroll={stopAutoScroll}
-            resumeAutoScroll={resumeAutoScroll}
-            lyricsContainerRef={lyricsContainerRef}
-            audioRef={audioRef}
-            file={state.file}
-            hasStarted={hasStarted}
-            dominantColor={dominantColor}
-          />
+          {showQueue ? (
+            <QueueView
+              items={queueItems}
+              currentSongIndex={state.currentSongIndex}
+              activeCover={state.metadata.cover}
+              onSelect={onQueueItemSelect}
+            />
+          ) : (
+            <LyricsView 
+              lyrics={state.lyrics}
+              isLoading={isLoading}
+              activeLyricIndex={activeLyricIndex}
+              autoScrollEnabled={autoScrollEnabled}
+              stopAutoScroll={stopAutoScroll}
+              resumeAutoScroll={resumeAutoScroll}
+              lyricsContainerRef={lyricsContainerRef}
+              audioRef={audioRef}
+              file={state.file}
+              hasStarted={hasStarted}
+              dominantColor={dominantColor}
+            />
+          )}
 
         </div>
       </div>
