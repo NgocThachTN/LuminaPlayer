@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { PlaylistItem, SongState } from '../types';
-import { adjustBrightness, ensureDarkColor, getColorPalette } from '../../services/colorService';
+import { adjustBrightness, ensureDarkColor, getColorPalette, hexToRgbString, mixColors } from '../../services/colorService';
 import { LyricsView } from './LyricsView';
 
 interface PlayerOverlayProps {
@@ -53,24 +53,33 @@ const formatTime = (time: number) => {
 
 type AmbientPalette = {
   base: string;
+  baseLift: string;
   primary: string;
   secondary: string;
   accent: string;
+  highlight: string;
   glow: string;
   shadow: string;
 };
 
 const buildAmbientPalette = (dominantColor: string, coverPalette: string[]): AmbientPalette => {
   const palette = coverPalette.length ? coverPalette : [dominantColor];
-  const seed = palette[0] || dominantColor || '#171717';
-  const primary = ensureDarkColor(seed, 0.26);
-  const secondary = ensureDarkColor(palette[1] || adjustBrightness(seed, 0.12), 0.32);
-  const accent = palette[2] || palette[1] || adjustBrightness(seed, 0.22);
-  const glow = adjustBrightness(accent, 0.18);
-  const base = ensureDarkColor(dominantColor || seed, 0.18) || '#171717';
-  const shadow = adjustBrightness(base, -0.28);
+  const seed = dominantColor || palette[0] || '#171717';
+  const safeBase = ensureDarkColor(seed, 0.16) || '#171717';
+  const base = mixColors(safeBase, '#040404', 0.42);
+  const primarySeed = palette[0] || seed;
+  const secondarySeed = palette[1] || adjustBrightness(primarySeed, 0.06);
+  const accentSeed = palette[2] || palette[1] || adjustBrightness(primarySeed, 0.14);
 
-  return { base, primary, secondary, accent, glow, shadow };
+  const primary = mixColors(ensureDarkColor(primarySeed, 0.22), base, 0.28);
+  const secondary = mixColors(ensureDarkColor(secondarySeed, 0.24), base, 0.36);
+  const accent = mixColors(ensureDarkColor(accentSeed, 0.28), primary, 0.32);
+  const baseLift = mixColors(base, primary, 0.24);
+  const highlight = mixColors(adjustBrightness(primary, 0.12), '#f4f1dc', 0.12);
+  const glow = mixColors(adjustBrightness(accent, 0.16), highlight, 0.32);
+  const shadow = mixColors(adjustBrightness(base, -0.18), '#000000', 0.46);
+
+  return { base, baseLift, primary, secondary, accent, highlight, glow, shadow };
 };
 
 interface QueueViewProps {
@@ -227,14 +236,28 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
     buildAmbientPalette(dominantColor, coverPalette),
   [dominantColor, coverPalette]);
 
+  const overlayColumnTransitionStyle = React.useMemo(() => ({
+    transitionProperty: 'flex-basis, transform, opacity',
+    transitionDuration: '320ms, 300ms, 220ms',
+    transitionTimingFunction: 'cubic-bezier(0.32,0.72,0,1), ease-out, ease-out',
+    willChange: 'flex-basis, transform, opacity',
+  } as React.CSSProperties), []);
+
   const playerBackgroundStyle = React.useMemo(() => ({
     backgroundColor: ambientPalette.base,
     '--cover-bg-base': ambientPalette.base,
+    '--cover-bg-base-lift': ambientPalette.baseLift,
     '--cover-bg-primary': ambientPalette.primary,
     '--cover-bg-secondary': ambientPalette.secondary,
     '--cover-bg-accent': ambientPalette.accent,
+    '--cover-bg-highlight': ambientPalette.highlight,
     '--cover-bg-glow': ambientPalette.glow,
     '--cover-bg-shadow': ambientPalette.shadow,
+    '--cover-bg-primary-rgb': hexToRgbString(ambientPalette.primary),
+    '--cover-bg-secondary-rgb': hexToRgbString(ambientPalette.secondary),
+    '--cover-bg-accent-rgb': hexToRgbString(ambientPalette.accent),
+    '--cover-bg-highlight-rgb': hexToRgbString(ambientPalette.highlight),
+    '--cover-bg-glow-rgb': hexToRgbString(ambientPalette.glow),
   } as React.CSSProperties), [ambientPalette]);
 
   // Scroll to active line when opening lyrics - instant scroll to prevent jump
@@ -300,6 +323,7 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
          <div className="lumina-ambient-depth" />
          <div className="lumina-ambient-grain" />
          <div className="lumina-ambient-readability" />
+         <div className="lumina-ambient-tone-balance" />
        </div>
        {/* Collapse Button */}
        <button 
@@ -321,7 +345,15 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
        </button>
 
        {/* Left Column Wrapper - smooth scale transition */}
-       <div className={`h-full flex flex-col relative bg-transparent z-20 transform-gpu transition-transform duration-300 ease-out items-center justify-center ${isSidePanelOpen ? 'w-full md:flex-[0_0_45%] scale-[0.98]' : 'w-full md:flex-[1_0_100%] scale-100'}`}>
+       <div
+         className={`h-full min-w-0 flex flex-col relative bg-transparent z-20 transform-gpu transition-transform duration-300 ease-out items-center justify-center ${isSidePanelOpen ? 'w-full scale-[0.98]' : 'w-full scale-100'}`}
+         style={{
+           ...overlayColumnTransitionStyle,
+           flexBasis: isSidePanelOpen ? '45%' : '100%',
+           flexGrow: isSidePanelOpen ? 0 : 1,
+           flexShrink: 0,
+         }}
+       >
 
       {/* Top: Album Art */}
       <div className="w-full flex-none flex items-center justify-center p-8 pb-10">
@@ -576,8 +608,21 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
     </div>
       
       {/* Right Side of Overlay: Lyrics - smooth fade and scale */}
-      <div className={`md:flex h-full flex-col relative bg-transparent transform-gpu overflow-hidden ${isSidePanelOpen ? 'flex-[1_0_55%]' : 'flex-[0_0_0px]'}`}>
-        <div className={`h-full w-full transform-gpu transition-all duration-300 ease-out ${isSidePanelOpen ? 'opacity-100 translate-x-0 scale-100' : 'opacity-0 translate-x-8 scale-95'}`}>
+      <div
+        className={`md:flex h-full min-w-0 flex-col relative bg-transparent transform-gpu overflow-hidden ${isSidePanelOpen ? 'pointer-events-auto' : 'pointer-events-none'}`}
+        style={{
+          ...overlayColumnTransitionStyle,
+          flexBasis: isSidePanelOpen ? '55%' : '0%',
+          flexGrow: isSidePanelOpen ? 1 : 0,
+          flexShrink: 0,
+        }}
+      >
+        <div
+          className={`relative z-10 h-full w-full transform-gpu transition-[opacity,transform] duration-300 ease-out ${isSidePanelOpen ? 'opacity-100 translate-x-0 scale-100' : 'opacity-0 translate-x-8 scale-95'}`}
+          style={{
+            transitionDelay: isSidePanelOpen ? '80ms' : '0ms',
+          }}
+        >
 
           {showQueue ? (
             <QueueView

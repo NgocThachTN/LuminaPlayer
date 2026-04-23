@@ -1,5 +1,18 @@
 import ColorThief from "./vendor/color-thief";
 
+const normalizeHex = (hex: string): string | null => {
+    let value = hex.replace(/^\s*#|\s*$/g, '');
+    if (value.length === 3) {
+        value = value.replace(/(.)/g, '$1$1');
+    }
+
+    if (!/^[0-9a-fA-F]{6}$/.test(value)) {
+        return null;
+    }
+
+    return value.toLowerCase();
+};
+
 /**
  * Extracts the dominant color from an image URL using Color Thief.
  */
@@ -49,6 +62,40 @@ const rgbToHex = (color: number[]): string => {
     }).join('');
 };
 
+export const hexToRgb = (hex: string): [number, number, number] | null => {
+    const normalized = normalizeHex(hex);
+    if (!normalized) return null;
+
+    return [
+        parseInt(normalized.slice(0, 2), 16),
+        parseInt(normalized.slice(2, 4), 16),
+        parseInt(normalized.slice(4, 6), 16),
+    ];
+};
+
+export const hexToRgbString = (hex: string): string => {
+    const rgb = hexToRgb(hex) || [17, 17, 17];
+    return `${rgb[0]}, ${rgb[1]}, ${rgb[2]}`;
+};
+
+export const mixColors = (colorA: string, colorB: string, weight: number = 0.5): string => {
+    const rgbA = hexToRgb(colorA);
+    const rgbB = hexToRgb(colorB);
+
+    if (!rgbA && !rgbB) return "#111111";
+    if (!rgbA) return colorB;
+    if (!rgbB) return colorA;
+
+    const t = Math.min(1, Math.max(0, weight));
+    const mix = (a: number, b: number) => Math.round(a + (b - a) * t);
+
+    return rgbToHex([
+        mix(rgbA[0], rgbB[0]),
+        mix(rgbA[1], rgbB[1]),
+        mix(rgbA[2], rgbB[2]),
+    ]);
+};
+
 /**
  * Extracts a small color palette from an image URL.
  */
@@ -90,17 +137,12 @@ export const getColorPalette = (imageSrc: string, colorCount: number = 6): Promi
  * percent: -1.0 to 1.0 (negative to darken, positive to lighten)
  */
 export const adjustBrightness = (hex: string, percent: number): string => {
-    // strip the leading # if it's there
-    hex = hex.replace(/^\s*#|\s*$/g, '');
+    const normalized = normalizeHex(hex);
+    if (!normalized) return "#000000";
 
-    // convert 3 char codes --> 6, e.g. `E0F` --> `EE00FF`
-    if (hex.length === 3) {
-        hex = hex.replace(/(.)/g, '$1$1');
-    }
-
-    const r = parseInt(hex.substr(0, 2), 16);
-    const g = parseInt(hex.substr(2, 2), 16);
-    const b = parseInt(hex.substr(4, 2), 16);
+    const r = parseInt(normalized.substring(0, 2), 16);
+    const g = parseInt(normalized.substring(2, 4), 16);
+    const b = parseInt(normalized.substring(4, 6), 16);
 
     if (isNaN(r) || isNaN(g) || isNaN(b)) return "#000000";
 
@@ -121,15 +163,12 @@ export const adjustBrightness = (hex: string, percent: number): string => {
  * If the color is too bright, it darkens it.
  */
 export const ensureDarkColor = (hex: string, maxLuminance: number = 0.15): string => {
-    // strip the leading # if it's there
-    let c = hex.replace(/^\s*#|\s*$/g, '');
-    if (c.length === 3) {
-        c = c.replace(/(.)/g, '$1$1');
-    }
+    let c = normalizeHex(hex);
+    if (!c) return "#111111";
 
-    let r = parseInt(c.substr(0, 2), 16);
-    let g = parseInt(c.substr(2, 2), 16);
-    let b = parseInt(c.substr(4, 2), 16);
+    let r = parseInt(c.substring(0, 2), 16);
+    let g = parseInt(c.substring(2, 4), 16);
+    let b = parseInt(c.substring(4, 6), 16);
     
     if (isNaN(r) || isNaN(g) || isNaN(b)) return "#111111";
 
