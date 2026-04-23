@@ -127,6 +127,8 @@ const App: React.FC = () => {
   // 5. UI State
   const uiHook = useUI(state.metadata);
   const [isDocumentFullscreen, setIsDocumentFullscreen] = useState(false);
+  const [isFullscreenTransitioning, setIsFullscreenTransitioning] = useState(false);
+  const hasMountedFullscreenRef = React.useRef(false);
 
   useEffect(() => {
     if (!uiHook.libraryToastMessage) return;
@@ -150,6 +152,20 @@ const App: React.FC = () => {
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
     };
   }, []);
+
+  useEffect(() => {
+    if (!hasMountedFullscreenRef.current) {
+      hasMountedFullscreenRef.current = true;
+      return;
+    }
+
+    setIsFullscreenTransitioning(true);
+    const timer = window.setTimeout(() => {
+      setIsFullscreenTransitioning(false);
+    }, 760);
+
+    return () => window.clearTimeout(timer);
+  }, [uiHook.isFullScreenPlayer]);
 
   const openLyricsFullscreen = useCallback(() => {
     uiHook.setIsFullScreenPlayer(true);
@@ -205,7 +221,7 @@ const App: React.FC = () => {
         </div>
       )}
 
-      <div className="absolute inset-0 bg-black/30 backdrop-blur-3xl z-0 pointer-events-none"></div>
+      <div className={`absolute inset-0 z-0 pointer-events-none lumina-app-backdrop ${isFullscreenTransitioning ? 'lumina-app-backdrop-transitioning' : ''}`}></div>
 
       {/* Main Content Area */}
       <main className="flex-1 w-full flex flex-col relative overflow-hidden">
@@ -291,6 +307,7 @@ const App: React.FC = () => {
          audioInfo={audioInfo}
          playlistCount={queue.length} // Show Queue count now
          isFullScreenPlayer={uiHook.isFullScreenPlayer}
+         isFullscreenTransitioning={isFullscreenTransitioning}
          isDocumentFullscreen={isDocumentFullscreen}
          setIsFullScreenPlayer={uiHook.setIsFullScreenPlayer}
          openPlayerWithLyrics={openPlayerWithLyrics}

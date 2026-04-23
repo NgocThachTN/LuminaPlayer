@@ -7,6 +7,7 @@ interface FooterPlayerProps {
   audioInfo: { format: string; bitrate: number | null };
   playlistCount: number;
   isFullScreenPlayer: boolean;
+  isFullscreenTransitioning: boolean;
   isDocumentFullscreen: boolean;
   setIsFullScreenPlayer: (v: boolean) => void;
   openPlayerWithLyrics: () => void;
@@ -25,6 +26,7 @@ const FooterPlayerBase: React.FC<FooterPlayerProps> = ({
   audioInfo,
   playlistCount,
   isFullScreenPlayer,
+  isFullscreenTransitioning,
   isDocumentFullscreen,
   setIsFullScreenPlayer,
   openPlayerWithLyrics,
@@ -50,7 +52,7 @@ const FooterPlayerBase: React.FC<FooterPlayerProps> = ({
          if ((e.target as HTMLElement).closest('button') || (e.target as HTMLElement).closest('input')) return;
          setIsFullScreenPlayer(true);
       }}
-      className={`w-full border-t border-white/10 flex flex-col glass-header bg-black/40 backdrop-blur-xl z-[70] transform-gpu will-change-transform transition-[transform,opacity,background-color] duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] cursor-pointer hover:bg-black/50 ${isFullScreenPlayer ? '-translate-y-[100vh] opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'}`}
+      className={`w-full border-t border-white/10 flex flex-col glass-header bg-black/40 ${isFullscreenTransitioning ? 'backdrop-blur-md' : 'backdrop-blur-xl'} z-[70] transform-gpu will-change-transform transition-[transform,opacity,background-color,backdrop-filter] duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] cursor-pointer hover:bg-black/50 ${isFullScreenPlayer ? '-translate-y-[100vh] opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'}`}
     >
       {/* Progress Bar - Top of footer */}
       <div className="w-full px-0 -mt-1 h-2 group relative cursor-pointer">

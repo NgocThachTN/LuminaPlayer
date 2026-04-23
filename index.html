@@ -270,6 +270,18 @@
             backdrop-filter: blur(16px);
             -webkit-backdrop-filter: blur(16px);
         }
+        .lumina-app-backdrop {
+            background: rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(64px);
+            -webkit-backdrop-filter: blur(64px);
+            will-change: opacity;
+            transform: translateZ(0);
+        }
+        .lumina-app-backdrop-transitioning {
+            background: rgba(0, 0, 0, 0.24);
+            backdrop-filter: blur(32px);
+            -webkit-backdrop-filter: blur(32px);
+        }
         /* Stagger animation for list items */
         @keyframes fadeSlideIn {
             from {
@@ -412,6 +424,14 @@
         }
         .lumina-ambient-transitioning .lumina-cover-wash {
             opacity: 0.26;
+        }
+        .lumina-ambient-transitioning .lumina-cover-field {
+            opacity: 0.5;
+            filter: blur(64px) saturate(1.85) brightness(0.72);
+        }
+        .lumina-ambient-transitioning .lumina-ambient-mesh {
+            opacity: 0.48;
+            filter: blur(8px) saturate(1.12);
         }
         .lumina-ambient-transitioning .lumina-ambient-grain {
             opacity: 0.016;
