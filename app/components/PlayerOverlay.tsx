@@ -828,12 +828,12 @@ const PlayerOverlayBase: React.FC<PlayerOverlayProps> = ({
             {renderLyricsPanel && (
               <div
                 className={`h-full w-full transition-opacity duration-150 ease-out ${
-                  isLyricsPanelVisible && lyricsPanelReady
+                  isLyricsPanelVisible
                     ? 'opacity-100'
                     : 'opacity-0'
                 }`}
                 style={{
-                  visibility: isLyricsPanelVisible && lyricsPanelReady ? 'visible' : 'hidden',
+                  visibility: isLyricsPanelVisible ? 'visible' : 'hidden',
                 }}
               >
                 <LyricsView 

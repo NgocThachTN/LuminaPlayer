@@ -194,7 +194,10 @@ export const LyricsView = memo(({
 
   if (lyrics.isSynced) {
     // Use prop index directly to ensure sync with scroll hook
-    const effectiveIndex = activeLyricIndex;
+    const effectiveIndex =
+      activeLyricIndex >= 0 && activeLyricIndex < lyrics.synced.length
+        ? activeLyricIndex
+        : -1;
     const isAtStart = effectiveIndex === -1;
 
     // Use consistent offset for both CSS and scroll calculations
