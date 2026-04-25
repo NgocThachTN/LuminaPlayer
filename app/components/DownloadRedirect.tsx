@@ -297,28 +297,20 @@ export const DownloadRedirect: React.FC = () => {
 
   const usageSteps = [
     {
-      title: 'Install and open the app',
-      description: 'Download the Windows installer from this page, run the setup file, then open LuminaPlayer from your desktop or Start menu.',
+      title: 'Download the installer',
+      description: 'Click Download for Windows, open the setup file, and follow the installer steps.',
     },
     {
-      title: 'Import your music',
-      description: 'On the first screen, choose Open Music Folder to add a full collection or Open File to add a single track.',
+      title: 'Add your music folder',
+      description: 'Open LuminaPlayer and choose Open Music Folder. Pick the folder where you keep your songs.',
     },
     {
-      title: 'Browse the library',
-      description: 'Use the Playlist, Albums, and Artists tabs to move through your music. Search, sort, or switch imported folders when the library gets larger.',
+      title: 'Choose how to browse',
+      description: 'Use Playlist, Albums, or Artists. Search at the top when you want to find a song quickly.',
     },
     {
-      title: 'Play and control songs',
-      description: 'Click any song, album, or artist to start playback. The player bar lets you seek, skip, shuffle, repeat, and adjust volume while you listen.',
-    },
-    {
-      title: 'Use the full player',
-      description: 'Click the player bar to open the full-screen view. From there you can view the queue, show lyrics, or keep the album artwork in focus.',
-    },
-    {
-      title: 'Keep your library updated',
-      description: 'Use Import Folder or Import Track to add more music later. If a folder changes, use Refresh Folder so LuminaPlayer scans it again.',
+      title: 'Play and enjoy',
+      description: 'Click a song to play it. Use the bottom player to pause, skip, change volume, open lyrics, or view the queue.',
     },
   ];
 
@@ -358,80 +350,80 @@ export const DownloadRedirect: React.FC = () => {
       </header>
 
       <main className="relative z-10">
-        <section className="mx-auto max-w-6xl px-5 pb-10 pt-10 md:px-8 md:pb-16 md:pt-14">
-          <div className="mx-auto max-w-3xl text-center">
+        <section className="mx-auto grid max-w-6xl gap-8 px-5 pb-10 pt-10 md:px-8 md:pb-14 md:pt-12 lg:grid-cols-[0.92fr_1.08fr] lg:items-center">
+          <div>
             <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-cyan-300/16 bg-cyan-300/10 px-4 py-2 text-sm font-semibold text-cyan-100">
               Official download for Windows
             </div>
-            <h1 className="text-4xl font-black leading-tight tracking-normal text-white md:text-6xl">
+            <h1 className="max-w-xl text-4xl font-black leading-tight tracking-normal text-white md:text-6xl">
               LuminaPlayer makes your local music feel simple again.
             </h1>
-            <p className="mx-auto mt-5 max-w-2xl text-base leading-8 text-slate-300 md:text-lg">
+            <p className="mt-5 max-w-xl text-base leading-8 text-slate-300 md:text-lg">
               Install the desktop player, import your music folder, then browse songs, albums, artists, artwork, and lyrics in one calm place.
             </p>
-          </div>
 
-          <div id="download" className="mx-auto mt-8 max-w-3xl rounded-3xl border border-white/10 bg-white/[0.07] p-4 shadow-[0_24px_80px_rgba(0,0,0,0.35)] md:p-5">
-            <div className="grid gap-5 md:grid-cols-[1fr_auto] md:items-center">
-              <div className="flex items-center gap-4">
-                <img src={appLogo} alt="" className="h-16 w-16 rounded-2xl shadow-[0_0_28px_rgba(56,189,248,0.28)]" />
-                <div>
-                  <div className="text-sm font-semibold text-cyan-200">Latest version</div>
-                  <div className="mt-1 text-2xl font-black text-white">{selectedRelease?.tagName || 'LuminaPlayer'}</div>
-                  <div className="mt-1 text-sm text-slate-400">
-                    {selectedRelease?.fileSize ? `${selectedRelease.fileSize} Windows installer` : 'Windows installer from GitHub Releases'}
+            <div id="download" className="mt-7 max-w-xl rounded-3xl border border-white/10 bg-white/[0.07] p-4 shadow-[0_24px_80px_rgba(0,0,0,0.35)] md:p-5">
+              <div className="grid gap-5">
+                <div className="flex items-center gap-4">
+                  <img src={appLogo} alt="" className="h-14 w-14 rounded-2xl shadow-[0_0_28px_rgba(56,189,248,0.28)]" />
+                  <div>
+                    <div className="text-sm font-semibold text-cyan-200">Latest version</div>
+                    <div className="mt-1 text-2xl font-black text-white">{selectedRelease?.tagName || 'LuminaPlayer'}</div>
+                    <div className="mt-1 text-sm text-slate-400">
+                      {selectedRelease?.fileSize ? `${selectedRelease.fileSize} Windows installer` : 'Windows installer from GitHub Releases'}
+                    </div>
                   </div>
+                </div>
+
+                <div>
+                  {selectedRelease?.downloadUrl ? (
+                    <a
+                      href={selectedRelease.downloadUrl}
+                      className="inline-flex w-full items-center justify-center gap-3 rounded-2xl bg-cyan-300 px-6 py-4 text-base font-black text-slate-950 shadow-[0_16px_34px_rgba(34,211,238,0.24)] transition hover:bg-cyan-200 sm:w-auto"
+                    >
+                      <DownloadIcon />
+                      Download for Windows
+                    </a>
+                  ) : error ? (
+                    <a
+                      href={`https://github.com/${REPO}/releases/latest`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex w-full items-center justify-center rounded-2xl border border-white/12 bg-white/8 px-6 py-4 text-base font-black text-white transition hover:bg-white/12 sm:w-auto"
+                    >
+                      Open GitHub Releases
+                    </a>
+                  ) : (
+                    <div className="inline-flex w-full items-center justify-center gap-3 rounded-2xl border border-white/12 bg-black/20 px-6 py-4 text-base font-black text-slate-300 sm:w-auto">
+                      <span className="h-5 w-5 animate-spin rounded-full border-2 border-cyan-200/20 border-t-cyan-200" />
+                      {status}
+                    </div>
+                  )}
                 </div>
               </div>
 
-              <div className="md:min-w-[240px]">
-                {selectedRelease?.downloadUrl ? (
-                  <a
-                    href={selectedRelease.downloadUrl}
-                    className="inline-flex w-full items-center justify-center gap-3 rounded-2xl bg-cyan-300 px-6 py-4 text-base font-black text-slate-950 shadow-[0_16px_34px_rgba(34,211,238,0.24)] transition hover:bg-cyan-200"
-                  >
-                    <DownloadIcon />
-                    Download for Windows
-                  </a>
-                ) : error ? (
-                  <a
-                    href={`https://github.com/${REPO}/releases/latest`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex w-full items-center justify-center rounded-2xl border border-white/12 bg-white/8 px-6 py-4 text-base font-black text-white transition hover:bg-white/12"
-                  >
-                    Open GitHub Releases
-                  </a>
-                ) : (
-                  <div className="inline-flex w-full items-center justify-center gap-3 rounded-2xl border border-white/12 bg-black/20 px-6 py-4 text-base font-black text-slate-300">
-                    <span className="h-5 w-5 animate-spin rounded-full border-2 border-cyan-200/20 border-t-cyan-200" />
-                    {status}
+              {error && <p className="mt-4 rounded-2xl bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-200">{error}</p>}
+
+              <div className="mt-5 grid gap-3 border-t border-white/8 pt-5 sm:grid-cols-3">
+                {(releaseDetails.length > 0 ? releaseDetails : requirements).map((item) => (
+                  <div key={item.label} className="rounded-2xl bg-black/18 px-4 py-3">
+                    <div className="text-xs font-semibold text-slate-400">{item.label}</div>
+                    <div className="mt-1 text-sm font-black text-white">{item.value}</div>
                   </div>
-                )}
+                ))}
               </div>
             </div>
 
-            {error && <p className="mt-4 rounded-2xl bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-200">{error}</p>}
-
-            <div className="mt-5 grid gap-3 border-t border-white/8 pt-5 sm:grid-cols-3">
-              {(releaseDetails.length > 0 ? releaseDetails : requirements).map((item) => (
-                <div key={item.label} className="rounded-2xl bg-black/18 px-4 py-3">
-                  <div className="text-xs font-semibold text-slate-400">{item.label}</div>
-                  <div className="mt-1 text-sm font-black text-white">{item.value}</div>
-                </div>
+            <div className="mt-5 flex max-w-xl flex-wrap gap-2">
+              {highlights.map((item) => (
+                <span key={item} className="rounded-full bg-white/[0.07] px-4 py-2 text-sm font-semibold text-slate-300">
+                  {item}
+                </span>
               ))}
             </div>
           </div>
 
-          <div className="mx-auto mt-6 flex max-w-3xl flex-wrap justify-center gap-2">
-            {highlights.map((item) => (
-              <span key={item} className="rounded-full bg-white/[0.07] px-4 py-2 text-sm font-semibold text-slate-300">
-                {item}
-              </span>
-            ))}
-          </div>
-
-          <div className="mt-12 overflow-hidden rounded-3xl border border-white/10 bg-white/[0.06] p-3 shadow-[0_24px_90px_rgba(0,0,0,0.34)]">
+          <div className="overflow-hidden rounded-3xl border border-white/10 bg-white/[0.06] p-3 shadow-[0_24px_90px_rgba(0,0,0,0.34)]">
             <img src={banner} alt="LuminaPlayer app preview" className="block w-full rounded-2xl" />
           </div>
         </section>
@@ -451,23 +443,29 @@ export const DownloadRedirect: React.FC = () => {
         </section>
 
         <section id="how-to-use" className="mx-auto max-w-6xl px-5 py-12 md:px-8">
-          <div className="grid gap-8 rounded-3xl bg-white/[0.06] p-5 md:p-8 lg:grid-cols-[320px_1fr]">
+          <div className="grid gap-8 rounded-3xl bg-white/[0.06] p-5 md:p-8 lg:grid-cols-[340px_1fr]">
             <div>
               <div className="text-sm font-semibold text-cyan-200">Quick start</div>
-              <h2 className="mt-2 text-3xl font-black tracking-normal text-white">Start in 3 minutes</h2>
+              <h2 className="mt-2 text-3xl font-black tracking-normal text-white">Start in 4 simple steps</h2>
               <p className="mt-4 text-sm leading-7 text-slate-400">
-                A simple path from installer to playback. No accounts, no setup maze, just your music folder.
+                This is the fastest way to begin. Download the app, add your music folder, then play your songs.
               </p>
+              <a
+                href="#download"
+                className="mt-6 inline-flex items-center justify-center rounded-2xl bg-cyan-300 px-5 py-3 text-sm font-black text-slate-950 transition hover:bg-cyan-200"
+              >
+                Start with download
+              </a>
             </div>
 
             <div className="grid gap-3">
               {usageSteps.map((step, index) => (
-                <article key={step.title} className="grid gap-3 rounded-2xl bg-black/18 p-4 sm:grid-cols-[42px_1fr]">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-cyan-300 text-sm font-black text-slate-950">
-                    {index + 1}
+                <article key={step.title} className="grid gap-4 rounded-2xl bg-black/18 p-4 sm:grid-cols-[52px_1fr]">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-cyan-300 text-base font-black text-slate-950">
+                    {String(index + 1).padStart(2, '0')}
                   </div>
                   <div>
-                    <h3 className="font-black text-white">{step.title}</h3>
+                    <h3 className="text-base font-black text-white">{step.title}</h3>
                     <p className="mt-1 text-sm leading-6 text-slate-400">{step.description}</p>
                   </div>
                 </article>
