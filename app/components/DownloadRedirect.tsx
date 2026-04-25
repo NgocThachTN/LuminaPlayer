@@ -76,7 +76,7 @@ const ReleaseImage: React.FC<{ src: string; alt: string }> = ({ src, alt }) => {
           alt={alt}
           referrerPolicy="no-referrer"
           onError={() => setFailed(true)}
-          className="block max-h-[420px] w-full object-contain"
+          className="block max-h-[520px] w-full rounded-xl object-contain"
         />
       )}
       {failed && (
@@ -84,7 +84,7 @@ const ReleaseImage: React.FC<{ src: string; alt: string }> = ({ src, alt }) => {
           src={getImagePreviewUrl(src)}
           title={alt}
           referrerPolicy="no-referrer"
-          className="h-[420px] w-full border-0 bg-white"
+          className="h-[520px] w-full rounded-xl border-0 bg-white"
         />
       )}
     </>
@@ -322,26 +322,35 @@ export const DownloadRedirect: React.FC = () => {
     },
   ];
 
-  return (
-    <div className="min-h-screen overflow-x-hidden bg-[#03070b] text-[#e8f7ff]">
-      <div className="fixed inset-0 pointer-events-none bg-[radial-gradient(circle_at_28%_12%,rgba(14,165,233,0.34),transparent_34%),linear-gradient(180deg,rgba(3,105,161,0.18)_0%,rgba(3,7,11,0)_48%)]" />
-      <div className="fixed inset-0 pointer-events-none opacity-[0.12] [background-image:linear-gradient(#7dd3fc_1px,transparent_1px),linear-gradient(90deg,#7dd3fc_1px,transparent_1px)] [background-size:34px_34px]" />
+  const highlights = ['Local music', 'Windows installer', 'No sign-in'];
 
-      <header className="relative z-10 border-b border-sky-300/15 bg-[#050b12]/86 backdrop-blur">
+  const selectRelease = (releaseId: number) => {
+    const release = releases.find((item) => item.id === releaseId);
+    if (!release) return;
+
+    setSelectedReleaseId(release.id);
+    window.history.pushState(null, '', getReleaseHash(release));
+  };
+
+  return (
+    <div className="min-h-screen overflow-x-hidden bg-[#061018] text-slate-100">
+      <div className="fixed inset-0 pointer-events-none bg-[radial-gradient(circle_at_18%_4%,rgba(56,189,248,0.22),transparent_30%),radial-gradient(circle_at_82%_10%,rgba(14,116,144,0.18),transparent_28%),linear-gradient(180deg,#071827_0%,#061018_44%,#04080d_100%)]" />
+
+      <header className="sticky top-0 z-30 border-b border-white/8 bg-[#061018]/86 backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4 md:px-8">
-          <a href="/download" className="flex items-center gap-3">
-            <img src={appLogo} alt="LuminaPlayer logo" className="h-12 w-12 rounded-[10px] shadow-[0_0_24px_rgba(14,165,233,0.38)]" />
+          <a href="/download" className="flex items-center gap-3 rounded-lg outline-none transition focus-visible:ring-2 focus-visible:ring-cyan-300">
+            <img src={appLogo} alt="LuminaPlayer logo" className="h-11 w-11 rounded-xl shadow-[0_0_24px_rgba(56,189,248,0.28)]" />
             <div>
-              <div className="text-base font-black tracking-tight text-white">LuminaPlayer</div>
-              <div className="text-xs font-bold uppercase tracking-[0.18em] text-sky-300">Desktop music player</div>
+              <div className="text-base font-extrabold tracking-tight text-white">LuminaPlayer</div>
+              <div className="text-xs font-semibold text-cyan-200/72">Desktop music player</div>
             </div>
           </a>
 
-          <nav className="hidden items-center gap-7 text-sm font-semibold text-sky-100/62 md:flex">
-            <a href="#download" className="transition hover:text-sky-200">Download</a>
-            <a href="#how-to-use" className="transition hover:text-sky-200">How to use</a>
-            <a href="#release-notes" className="transition hover:text-sky-200">Release notes</a>
-            <a href={`https://github.com/${REPO}`} target="_blank" rel="noopener noreferrer" className="transition hover:text-sky-200">
+          <nav className="hidden items-center gap-1 text-sm font-semibold text-slate-300 md:flex">
+            <a href="#download" className="rounded-full px-4 py-2 transition hover:bg-white/8 hover:text-white">Download</a>
+            <a href="#how-to-use" className="rounded-full px-4 py-2 transition hover:bg-white/8 hover:text-white">How to use</a>
+            <a href="#release-notes" className="rounded-full px-4 py-2 transition hover:bg-white/8 hover:text-white">Releases</a>
+            <a href={`https://github.com/${REPO}`} target="_blank" rel="noopener noreferrer" className="rounded-full px-4 py-2 transition hover:bg-white/8 hover:text-white">
               GitHub
             </a>
           </nav>
@@ -349,37 +358,37 @@ export const DownloadRedirect: React.FC = () => {
       </header>
 
       <main className="relative z-10">
-        <section className="mx-auto grid max-w-6xl gap-10 px-5 pb-12 pt-10 md:px-8 md:pb-16 md:pt-14 lg:grid-cols-[0.88fr_1.12fr] lg:items-center">
-          <div>
-            <div className="mb-6 inline-flex items-center gap-2 border-y border-sky-300/35 py-2 text-xs font-black uppercase tracking-[0.22em] text-sky-200">
-              Official Windows installer
+        <section className="mx-auto max-w-6xl px-5 pb-10 pt-10 md:px-8 md:pb-16 md:pt-14">
+          <div className="mx-auto max-w-3xl text-center">
+            <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-cyan-300/16 bg-cyan-300/10 px-4 py-2 text-sm font-semibold text-cyan-100">
+              Official download for Windows
             </div>
-
-            <h1 className="max-w-2xl font-serif text-5xl font-black leading-[0.95] tracking-normal text-white md:text-7xl">
-              Download LuminaPlayer
+            <h1 className="text-4xl font-black leading-tight tracking-normal text-white md:text-6xl">
+              LuminaPlayer makes your local music feel simple again.
             </h1>
-
-            <p className="mt-6 max-w-xl text-lg leading-8 text-sky-50/70">
-              A focused desktop player for people who still keep music files. Import your local library, see album art,
-              follow synced lyrics, and listen without a subscription getting in the way.
+            <p className="mx-auto mt-5 max-w-2xl text-base leading-8 text-slate-300 md:text-lg">
+              Install the desktop player, import your music folder, then browse songs, albums, artists, artwork, and lyrics in one calm place.
             </p>
+          </div>
 
-            <div id="download" className="mt-8 max-w-xl border border-sky-300/22 bg-[#07111c]/92 p-4 shadow-[6px_6px_0_#0ea5e9]">
-              <div className="flex items-start gap-4">
-                <img src={appLogo} alt="" className="h-16 w-16 rounded-[12px] shadow-[0_0_22px_rgba(56,189,248,0.26)]" />
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-black uppercase tracking-[0.16em] text-sky-200">Lumina Music Player</div>
-                  <div className="mt-1 text-sm leading-6 text-sky-50/60">
-                    {selectedRelease ? `${selectedRelease.tagName} setup package, delivered from GitHub Releases.` : 'Windows setup package, delivered from GitHub Releases.'}
+          <div id="download" className="mx-auto mt-8 max-w-3xl rounded-3xl border border-white/10 bg-white/[0.07] p-4 shadow-[0_24px_80px_rgba(0,0,0,0.35)] md:p-5">
+            <div className="grid gap-5 md:grid-cols-[1fr_auto] md:items-center">
+              <div className="flex items-center gap-4">
+                <img src={appLogo} alt="" className="h-16 w-16 rounded-2xl shadow-[0_0_28px_rgba(56,189,248,0.28)]" />
+                <div>
+                  <div className="text-sm font-semibold text-cyan-200">Latest version</div>
+                  <div className="mt-1 text-2xl font-black text-white">{selectedRelease?.tagName || 'LuminaPlayer'}</div>
+                  <div className="mt-1 text-sm text-slate-400">
+                    {selectedRelease?.fileSize ? `${selectedRelease.fileSize} Windows installer` : 'Windows installer from GitHub Releases'}
                   </div>
                 </div>
               </div>
 
-              <div className="mt-5">
+              <div className="md:min-w-[240px]">
                 {selectedRelease?.downloadUrl ? (
                   <a
                     href={selectedRelease.downloadUrl}
-                    className="inline-flex w-full items-center justify-center gap-3 bg-sky-400 px-5 py-4 text-base font-black text-[#03101a] shadow-[inset_0_-3px_0_rgba(0,0,0,0.18)] transition hover:bg-sky-300 sm:w-auto"
+                    className="inline-flex w-full items-center justify-center gap-3 rounded-2xl bg-cyan-300 px-6 py-4 text-base font-black text-slate-950 shadow-[0_16px_34px_rgba(34,211,238,0.24)] transition hover:bg-cyan-200"
                   >
                     <DownloadIcon />
                     Download for Windows
@@ -389,208 +398,193 @@ export const DownloadRedirect: React.FC = () => {
                     href={`https://github.com/${REPO}/releases/latest`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex w-full items-center justify-center bg-sky-950 px-5 py-4 text-base font-black text-sky-50 transition hover:bg-sky-900 sm:w-auto"
+                    className="inline-flex w-full items-center justify-center rounded-2xl border border-white/12 bg-white/8 px-6 py-4 text-base font-black text-white transition hover:bg-white/12"
                   >
                     Open GitHub Releases
                   </a>
                 ) : (
-                  <div className="inline-flex w-full items-center justify-center gap-3 border border-sky-300/20 bg-sky-950/70 px-5 py-4 text-base font-black text-sky-100/72 sm:w-auto">
-                    <span className="h-5 w-5 animate-spin rounded-full border-2 border-sky-200/20 border-t-sky-200" />
+                  <div className="inline-flex w-full items-center justify-center gap-3 rounded-2xl border border-white/12 bg-black/20 px-6 py-4 text-base font-black text-slate-300">
+                    <span className="h-5 w-5 animate-spin rounded-full border-2 border-cyan-200/20 border-t-cyan-200" />
                     {status}
                   </div>
                 )}
               </div>
+            </div>
 
-              {error && <p className="mt-4 text-sm font-semibold text-red-300">{error}</p>}
+            {error && <p className="mt-4 rounded-2xl bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-200">{error}</p>}
 
-              <dl className="mt-5 grid gap-3 border-t border-sky-300/15 pt-4 sm:grid-cols-3">
-                {(releaseDetails.length > 0 ? releaseDetails : requirements).map((item) => (
-                  <div key={item.label}>
-                    <dt className="text-[11px] font-black uppercase tracking-[0.18em] text-sky-200/45">{item.label}</dt>
-                    <dd className="mt-1 text-sm font-black text-sky-50">{item.value}</dd>
-                  </div>
-                ))}
-              </dl>
+            <div className="mt-5 grid gap-3 border-t border-white/8 pt-5 sm:grid-cols-3">
+              {(releaseDetails.length > 0 ? releaseDetails : requirements).map((item) => (
+                <div key={item.label} className="rounded-2xl bg-black/18 px-4 py-3">
+                  <div className="text-xs font-semibold text-slate-400">{item.label}</div>
+                  <div className="mt-1 text-sm font-black text-white">{item.value}</div>
+                </div>
+              ))}
             </div>
           </div>
 
-          <div className="lg:pl-6">
-            <div className="border border-sky-300/18 bg-[#02060a] p-3 shadow-[10px_10px_0_#075985]">
-              <div className="mb-3 flex items-center justify-between border-b border-sky-200/12 px-2 pb-3">
-                <div className="flex items-center gap-3">
-                  <img src={appLogo} alt="LuminaPlayer" className="h-9 w-9 rounded-[8px]" />
-                  <div>
-                    <div className="text-sm font-black text-white">LuminaPlayer</div>
-                    <div className="text-xs text-sky-200/58">Local library preview</div>
-                  </div>
-                </div>
-                <div className="hidden text-xs font-bold uppercase tracking-[0.16em] text-sky-200/58 sm:block">No sign-in required</div>
-              </div>
-              <img src={banner} alt="LuminaPlayer app preview" className="block w-full border border-sky-200/10" />
-            </div>
+          <div className="mx-auto mt-6 flex max-w-3xl flex-wrap justify-center gap-2">
+            {highlights.map((item) => (
+              <span key={item} className="rounded-full bg-white/[0.07] px-4 py-2 text-sm font-semibold text-slate-300">
+                {item}
+              </span>
+            ))}
+          </div>
+
+          <div className="mt-12 overflow-hidden rounded-3xl border border-white/10 bg-white/[0.06] p-3 shadow-[0_24px_90px_rgba(0,0,0,0.34)]">
+            <img src={banner} alt="LuminaPlayer app preview" className="block w-full rounded-2xl" />
           </div>
         </section>
 
-        <section id="release-notes" className="mx-auto max-w-6xl px-5 pb-12 md:px-8">
-          <div className="border border-sky-300/18 bg-[#06101a]/92">
-            <div className="border-b border-sky-300/15 p-5 md:p-6">
-              <div className="text-xs font-black uppercase tracking-[0.2em] text-sky-300">GitHub release notes</div>
-              <h2 className="mt-2 font-serif text-3xl font-black tracking-normal text-white">Version history</h2>
-            </div>
-
-            {releases.length > 0 ? (
-              <div className="grid md:grid-cols-[240px_1fr]">
-                <div className="flex gap-2 overflow-x-auto border-b border-sky-300/15 p-3 md:sticky md:top-4 md:block md:max-h-[calc(100vh-2rem)] md:overflow-y-auto md:border-b-0 md:border-r md:p-4">
-                  {releases.map((release) => {
-                    const isSelected = release.id === selectedRelease?.id;
-
-                    return (
-                      <button
-                        key={release.id}
-                        type="button"
-                        onClick={() => {
-                          setSelectedReleaseId(release.id);
-                          window.history.pushState(null, '', getReleaseHash(release));
-                          window.requestAnimationFrame(() => {
-                            document.getElementById('release-notes')?.scrollIntoView({ block: 'start' });
-                          });
-                        }}
-                        className={`block min-w-[150px] border px-4 py-3 text-left transition md:mb-2 md:w-full ${
-                          isSelected
-                            ? 'border-sky-300 bg-sky-300 text-[#03101a]'
-                            : 'border-sky-300/15 bg-[#02070d] text-sky-100/70 hover:border-sky-300/45 hover:text-sky-50'
-                        }`}
-                      >
-                        <span className="block text-sm font-black">{release.tagName}</span>
-                        <span className={`mt-1 block text-xs font-semibold ${isSelected ? 'text-[#03101a]/72' : 'text-sky-200/46'}`}>
-                          {release.releaseDate || 'Unpublished'}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {selectedRelease && (
-                  <article key={selectedRelease.id} id={getReleaseDomId(selectedRelease)} className="p-5 md:p-6">
-                      <div className="flex flex-col gap-3 border-b border-sky-300/12 pb-5 sm:flex-row sm:items-start sm:justify-between">
-                        <div>
-                          <h3 className="text-2xl font-black text-white">{selectedRelease.name}</h3>
-                          <div className="mt-2 flex flex-wrap gap-2 text-xs font-bold uppercase tracking-[0.14em]">
-                            <span className="border border-sky-300/18 bg-sky-950/55 px-3 py-1 text-sky-200">{selectedRelease.tagName}</span>
-                            {selectedRelease.isPrerelease && <span className="border border-amber-200/25 bg-amber-300/10 px-3 py-1 text-amber-200">Pre-release</span>}
-                            {selectedRelease.fileSize && <span className="border border-sky-300/18 bg-sky-950/55 px-3 py-1 text-sky-200">{selectedRelease.fileSize}</span>}
-                            {selectedRelease.releaseDate && <span className="border border-sky-300/18 bg-sky-950/55 px-3 py-1 text-sky-200">{selectedRelease.releaseDate}</span>}
-                          </div>
-                        </div>
-
-                        {selectedRelease.downloadUrl && (
-                          <a
-                            href={selectedRelease.downloadUrl}
-                            className="inline-flex items-center justify-center gap-2 border border-sky-300/30 px-4 py-3 text-sm font-black text-sky-100 transition hover:bg-sky-300 hover:text-[#03101a]"
-                          >
-                            <DownloadIcon />
-                            Download this version
-                          </a>
-                        )}
-                      </div>
-
-                      <div className="mt-5 space-y-4 text-sm leading-7 text-sky-50/72">
-                        {formatReleaseNotes(selectedRelease.notes).map((item, index) =>
-                          item.type === 'image' ? (
-                            <a
-                              key={`${selectedRelease.id}-${index}`}
-                              href={item.src}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="block overflow-hidden border border-sky-300/18 bg-[#02070d] p-2 transition hover:border-sky-300/45"
-                            >
-                              <ReleaseImage src={item.src} alt={item.alt} />
-                              <span className="mt-2 block text-xs font-black uppercase tracking-[0.16em] text-sky-300">
-                                Open image
-                              </span>
-                            </a>
-                          ) : (
-                            <div key={`${selectedRelease.id}-${index}`} className="border-l-2 border-sky-300/36 pl-4">
-                              {item.text}
-                            </div>
-                          )
-                        )}
-                      </div>
-                    </article>
-                )}
-              </div>
-            ) : (
-              <div className="p-6 text-sm font-semibold text-sky-100/62">{status}</div>
-            )}
-          </div>
-        </section>
-
-        <section id="features" className="border-y border-sky-300/15 bg-[#07111c]/72">
-          <div className="mx-auto grid max-w-6xl gap-px px-5 py-10 md:grid-cols-3 md:px-8">
+        <section id="features" className="mx-auto max-w-6xl px-5 py-8 md:px-8">
+          <div className="grid gap-4 md:grid-cols-3">
             {features.map((feature) => (
-              <article key={feature.title} className="bg-[#08131f] p-6">
-                <div className="mb-5 flex h-11 w-11 items-center justify-center bg-sky-300 text-[#03101a]">
+              <article key={feature.title} className="rounded-3xl bg-white/[0.065] p-6">
+                <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl bg-cyan-300 text-slate-950">
                   {feature.icon}
                 </div>
                 <h2 className="text-lg font-black text-white">{feature.title}</h2>
-                <p className="mt-3 text-sm leading-6 text-sky-50/58">{feature.description}</p>
+                <p className="mt-3 text-sm leading-6 text-slate-400">{feature.description}</p>
               </article>
             ))}
           </div>
         </section>
 
         <section id="how-to-use" className="mx-auto max-w-6xl px-5 py-12 md:px-8">
-          <div className="border-b border-sky-300/15 pb-6">
-            <div className="text-xs font-black uppercase tracking-[0.2em] text-sky-300">Quick start</div>
-            <h2 className="mt-2 font-serif text-3xl font-black tracking-normal text-white">How to use LuminaPlayer</h2>
-            <p className="mt-3 max-w-2xl text-sm leading-7 text-sky-50/62">
-              Follow these steps after installing the app. LuminaPlayer works with your local music files, so you stay in control of the library.
-            </p>
-          </div>
+          <div className="grid gap-8 rounded-3xl bg-white/[0.06] p-5 md:p-8 lg:grid-cols-[320px_1fr]">
+            <div>
+              <div className="text-sm font-semibold text-cyan-200">Quick start</div>
+              <h2 className="mt-2 text-3xl font-black tracking-normal text-white">Start in 3 minutes</h2>
+              <p className="mt-4 text-sm leading-7 text-slate-400">
+                A simple path from installer to playback. No accounts, no setup maze, just your music folder.
+              </p>
+            </div>
 
-          <div className="grid gap-px border border-sky-300/18 bg-sky-300/18 md:grid-cols-2">
-            {usageSteps.map((step, index) => (
-              <article key={step.title} className="grid grid-cols-[56px_1fr] gap-4 bg-[#050b12] p-5">
-                <div className="flex h-11 w-11 items-center justify-center border border-sky-300/30 bg-[#02070d] font-serif text-xl font-black text-sky-200">
-                  {String(index + 1).padStart(2, '0')}
-                </div>
-                <div>
-                  <h3 className="text-base font-black text-white">{step.title}</h3>
-                  <p className="mt-2 text-sm leading-6 text-sky-50/62">{step.description}</p>
-                </div>
-              </article>
-            ))}
+            <div className="grid gap-3">
+              {usageSteps.map((step, index) => (
+                <article key={step.title} className="grid gap-3 rounded-2xl bg-black/18 p-4 sm:grid-cols-[42px_1fr]">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-cyan-300 text-sm font-black text-slate-950">
+                    {index + 1}
+                  </div>
+                  <div>
+                    <h3 className="font-black text-white">{step.title}</h3>
+                    <p className="mt-1 text-sm leading-6 text-slate-400">{step.description}</p>
+                  </div>
+                </article>
+              ))}
+            </div>
           </div>
         </section>
 
-        <section className="mx-auto max-w-6xl px-5 py-12 md:px-8">
-          <div className="grid gap-8 border-t border-sky-300/15 pt-8 md:grid-cols-[0.9fr_1.1fr]">
+        <section id="release-notes" className="mx-auto max-w-6xl px-5 py-12 md:px-8">
+          <div className="mb-6 grid gap-4 md:grid-cols-[1fr_280px] md:items-end">
             <div>
-              <h2 className="font-serif text-3xl font-black tracking-normal text-white">Before you install</h2>
-              <p className="mt-3 max-w-lg text-sm leading-7 text-sky-50/62">
-                The installer is published with each release. If Windows SmartScreen asks for confirmation, you can
-                review the source code and release assets on GitHub before continuing.
+              <div className="text-sm font-semibold text-cyan-200">Release notes</div>
+              <h2 className="mt-2 text-3xl font-black tracking-normal text-white">Choose a version</h2>
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-400">
+                Pick any release to see what changed. Screenshots and notes are pulled from GitHub Releases.
+              </p>
+            </div>
+
+            {releases.length > 0 && (
+              <label className="block">
+                <span className="mb-2 block text-sm font-semibold text-slate-300">Version</span>
+                <select
+                  value={selectedRelease?.id || ''}
+                  onChange={(event) => selectRelease(Number(event.target.value))}
+                  className="w-full rounded-2xl border border-white/10 bg-[#0b1722] px-4 py-3 text-sm font-bold text-white outline-none transition focus:border-cyan-300"
+                >
+                  {releases.map((release) => (
+                    <option key={release.id} value={release.id}>
+                      {release.tagName} {release.releaseDate ? `- ${release.releaseDate}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </div>
+
+          <div className="rounded-3xl bg-white/[0.06] p-4 md:p-6">
+            {releases.length > 0 && selectedRelease ? (
+              <article key={selectedRelease.id} id={getReleaseDomId(selectedRelease)}>
+                <div className="grid gap-5 border-b border-white/8 pb-5 md:grid-cols-[1fr_auto] md:items-start">
+                  <div>
+                    <h3 className="text-2xl font-black text-white">{selectedRelease.name}</h3>
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs font-bold">
+                      <span className="rounded-full bg-cyan-300/14 px-3 py-1.5 text-cyan-100">{selectedRelease.tagName}</span>
+                      {selectedRelease.isPrerelease && <span className="rounded-full bg-amber-300/14 px-3 py-1.5 text-amber-100">Pre-release</span>}
+                      {selectedRelease.fileSize && <span className="rounded-full bg-white/8 px-3 py-1.5 text-slate-300">{selectedRelease.fileSize}</span>}
+                      {selectedRelease.releaseDate && <span className="rounded-full bg-white/8 px-3 py-1.5 text-slate-300">{selectedRelease.releaseDate}</span>}
+                    </div>
+                  </div>
+
+                  {selectedRelease.downloadUrl && (
+                    <a
+                      href={selectedRelease.downloadUrl}
+                      className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/8 px-5 py-3 text-sm font-black text-white transition hover:bg-cyan-300 hover:text-slate-950"
+                    >
+                      <DownloadIcon />
+                      Download this version
+                    </a>
+                  )}
+                </div>
+
+                <div className="mt-5 space-y-4 text-sm leading-7 text-slate-300">
+                  {formatReleaseNotes(selectedRelease.notes).map((item, index) =>
+                    item.type === 'image' ? (
+                      <a
+                        key={`${selectedRelease.id}-${index}`}
+                        href={item.src}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block overflow-hidden rounded-2xl bg-black/24 p-2 transition hover:bg-black/32"
+                      >
+                        <ReleaseImage src={item.src} alt={item.alt} />
+                        <span className="mt-3 block px-2 pb-1 text-xs font-black uppercase tracking-[0.14em] text-cyan-200">
+                          Open image
+                        </span>
+                      </a>
+                    ) : (
+                      <div key={`${selectedRelease.id}-${index}`} className="rounded-2xl bg-black/18 px-4 py-3">
+                        {item.text}
+                      </div>
+                    )
+                  )}
+                </div>
+              </article>
+            ) : (
+              <div className="p-4 text-sm font-semibold text-slate-400">{status}</div>
+            )}
+          </div>
+        </section>
+
+        <section className="mx-auto max-w-6xl px-5 pb-14 md:px-8">
+          <div className="grid gap-5 rounded-3xl bg-white/[0.06] p-5 md:grid-cols-[1fr_1.3fr] md:p-8">
+            <div>
+              <h2 className="text-2xl font-black tracking-normal text-white">Before you install</h2>
+              <p className="mt-3 text-sm leading-7 text-slate-400">
+                If Windows SmartScreen appears, review the GitHub source code and release assets before continuing.
               </p>
             </div>
             <div className="grid gap-3 sm:grid-cols-3">
               {requirements.map((item) => (
-                <div key={item.label} className="border border-sky-300/18 bg-[#07111c] p-4">
-                  <div className="text-[11px] font-black uppercase tracking-[0.18em] text-sky-200/45">{item.label}</div>
-                  <div className="mt-2 text-sm font-black text-sky-50">{item.value}</div>
+                <div key={item.label} className="rounded-2xl bg-black/18 p-4">
+                  <div className="text-xs font-semibold text-slate-400">{item.label}</div>
+                  <div className="mt-1 text-sm font-black text-white">{item.value}</div>
                 </div>
               ))}
             </div>
           </div>
         </section>
 
-        <footer className="mx-auto max-w-6xl px-5 pb-10 text-sm font-semibold text-sky-100/42 md:px-8">
-          <div className="flex flex-col gap-3 border-t border-sky-300/15 pt-6 md:flex-row md:items-center md:justify-between">
+        <footer className="mx-auto max-w-6xl px-5 pb-10 text-sm font-semibold text-slate-500 md:px-8">
+          <div className="flex flex-col gap-3 border-t border-white/8 pt-6 md:flex-row md:items-center md:justify-between">
             <span>LuminaPlayer for Windows</span>
             <div className="flex gap-5">
-              <a href={`https://github.com/${REPO}`} target="_blank" rel="noopener noreferrer" className="hover:text-sky-200">
+              <a href={`https://github.com/${REPO}`} target="_blank" rel="noopener noreferrer" className="hover:text-cyan-200">
                 Source code
               </a>
-              <a href={`https://github.com/${REPO}/releases`} target="_blank" rel="noopener noreferrer" className="hover:text-sky-200">
+              <a href={`https://github.com/${REPO}/releases`} target="_blank" rel="noopener noreferrer" className="hover:text-cyan-200">
                 All releases
               </a>
             </div>
