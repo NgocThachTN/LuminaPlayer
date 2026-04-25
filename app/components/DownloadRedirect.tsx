@@ -295,6 +295,33 @@ export const DownloadRedirect: React.FC = () => {
     },
   ];
 
+  const usageSteps = [
+    {
+      title: 'Install and open the app',
+      description: 'Download the Windows installer from this page, run the setup file, then open LuminaPlayer from your desktop or Start menu.',
+    },
+    {
+      title: 'Import your music',
+      description: 'On the first screen, choose Open Music Folder to add a full collection or Open File to add a single track.',
+    },
+    {
+      title: 'Browse the library',
+      description: 'Use the Playlist, Albums, and Artists tabs to move through your music. Search, sort, or switch imported folders when the library gets larger.',
+    },
+    {
+      title: 'Play and control songs',
+      description: 'Click any song, album, or artist to start playback. The player bar lets you seek, skip, shuffle, repeat, and adjust volume while you listen.',
+    },
+    {
+      title: 'Use the full player',
+      description: 'Click the player bar to open the full-screen view. From there you can view the queue, show lyrics, or keep the album artwork in focus.',
+    },
+    {
+      title: 'Keep your library updated',
+      description: 'Use Import Folder or Import Track to add more music later. If a folder changes, use Refresh Folder so LuminaPlayer scans it again.',
+    },
+  ];
+
   return (
     <div className="min-h-screen overflow-x-hidden bg-[#03070b] text-[#e8f7ff]">
       <div className="fixed inset-0 pointer-events-none bg-[radial-gradient(circle_at_28%_12%,rgba(14,165,233,0.34),transparent_34%),linear-gradient(180deg,rgba(3,105,161,0.18)_0%,rgba(3,7,11,0)_48%)]" />
@@ -312,6 +339,7 @@ export const DownloadRedirect: React.FC = () => {
 
           <nav className="hidden items-center gap-7 text-sm font-semibold text-sky-100/62 md:flex">
             <a href="#download" className="transition hover:text-sky-200">Download</a>
+            <a href="#how-to-use" className="transition hover:text-sky-200">How to use</a>
             <a href="#release-notes" className="transition hover:text-sky-200">Release notes</a>
             <a href={`https://github.com/${REPO}`} target="_blank" rel="noopener noreferrer" className="transition hover:text-sky-200">
               GitHub
@@ -506,6 +534,30 @@ export const DownloadRedirect: React.FC = () => {
                 </div>
                 <h2 className="text-lg font-black text-white">{feature.title}</h2>
                 <p className="mt-3 text-sm leading-6 text-sky-50/58">{feature.description}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section id="how-to-use" className="mx-auto max-w-6xl px-5 py-12 md:px-8">
+          <div className="border-b border-sky-300/15 pb-6">
+            <div className="text-xs font-black uppercase tracking-[0.2em] text-sky-300">Quick start</div>
+            <h2 className="mt-2 font-serif text-3xl font-black tracking-normal text-white">How to use LuminaPlayer</h2>
+            <p className="mt-3 max-w-2xl text-sm leading-7 text-sky-50/62">
+              Follow these steps after installing the app. LuminaPlayer works with your local music files, so you stay in control of the library.
+            </p>
+          </div>
+
+          <div className="grid gap-px border border-sky-300/18 bg-sky-300/18 md:grid-cols-2">
+            {usageSteps.map((step, index) => (
+              <article key={step.title} className="grid grid-cols-[56px_1fr] gap-4 bg-[#050b12] p-5">
+                <div className="flex h-11 w-11 items-center justify-center border border-sky-300/30 bg-[#02070d] font-serif text-xl font-black text-sky-200">
+                  {String(index + 1).padStart(2, '0')}
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-white">{step.title}</h3>
+                  <p className="mt-2 text-sm leading-6 text-sky-50/62">{step.description}</p>
+                </div>
               </article>
             ))}
           </div>
