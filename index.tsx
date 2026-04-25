@@ -13,8 +13,13 @@ const root = ReactDOM.createRoot(rootElement);
 
 // Simple Client-Side Routing for /download
 const path = window.location.pathname;
+const isDownloadRoute =
+  path === '/download' ||
+  path === '/download/' ||
+  window.location.href.includes('/download#') ||
+  window.location.href.includes('/download?');
 
-if (path === '/download' || path === '/download/') {
+if (isDownloadRoute) {
   root.render(
     <React.StrictMode>
       <DownloadRedirect />

@@ -1,25 +1,169 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import banner from '@/assets/banner.png';
 import appLogo from '@/resources/icons/lumina-icon.png';
 
-type ReleaseState = {
+type AppRelease = {
+  id: number;
+  tagName: string;
+  name: string;
+  notes: string;
   downloadUrl: string | null;
-  versionName: string | null;
   fileSize: string | null;
   releaseDate: string | null;
+  isPrerelease: boolean;
 };
+
+type ReleaseNoteItem =
+  | {
+      type: 'text';
+      text: string;
+    }
+  | {
+      type: 'image';
+      src: string;
+      alt: string;
+    };
 
 const REPO = 'NgocThachTN/LuminaPlayer';
 
+const DownloadIcon = () => (
+  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v12m0 0 5-5m-5 5-5-5M5 21h14" />
+  </svg>
+);
+
+const DiscIcon = () => (
+  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+    <circle cx="12" cy="12" r="8" strokeWidth={2} />
+    <circle cx="12" cy="12" r="2" strokeWidth={2} />
+  </svg>
+);
+
+const FolderIcon = () => (
+  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8.5a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5V7Z" />
+  </svg>
+);
+
+const LyricsIcon = () => (
+  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 18V5l10-2v13M9 18c0 1.1-1.34 2-3 2s-3-.9-3-2 1.34-2 3-2 3 .9 3 2Zm10-2c0 1.1-1.34 2-3 2s-3-.9-3-2 1.34-2 3-2 3 .9 3 2Z" />
+  </svg>
+);
+
+const getImagePreviewUrl = (src: string) => {
+  if (src.includes('github.com/user-attachments/assets/')) {
+    return `/api/release-image?url=${encodeURIComponent(src)}`;
+  }
+
+  return src;
+};
+
+const ReleaseImage: React.FC<{ src: string; alt: string }> = ({ src, alt }) => {
+  const [imageSrc, setImageSrc] = useState(getImagePreviewUrl(src));
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setImageSrc(getImagePreviewUrl(src));
+    setFailed(false);
+  }, [src]);
+
+  return (
+    <>
+      {!failed && (
+        <img
+          src={imageSrc}
+          alt={alt}
+          referrerPolicy="no-referrer"
+          onError={() => setFailed(true)}
+          className="block max-h-[420px] w-full object-contain"
+        />
+      )}
+      {failed && (
+        <iframe
+          src={getImagePreviewUrl(src)}
+          title={alt}
+          referrerPolicy="no-referrer"
+          className="h-[420px] w-full border-0 bg-white"
+        />
+      )}
+    </>
+  );
+};
+
+const formatReleaseDate = (value: string | null) =>
+  value
+    ? new Date(value).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      })
+    : null;
+
+const getAttributeValue = (html: string, attribute: string) =>
+  html.match(new RegExp(`${attribute}="([^"]+)"`, 'i'))?.[1] || '';
+
+const getReleaseDomId = (release: AppRelease) =>
+  `release-${String(release.tagName || release.id).toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+
+const getReleaseHash = (release: AppRelease) => `#${getReleaseDomId(release)}`;
+
+const getReleaseIdFromHash = (releaseList: AppRelease[]) => {
+  const currentHash = window.location.hash.toLowerCase();
+  if (!currentHash) return null;
+
+  return releaseList.find((release) => getReleaseHash(release).toLowerCase() === currentHash)?.id || null;
+};
+
+const formatReleaseNotes = (notes: string): ReleaseNoteItem[] => {
+  const items = String(notes || '')
+    .replace(/\r/g, '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map<ReleaseNoteItem | null>((line) => {
+      const markdownImage = line.match(/!\[(.*?)\]\((.*?)\)/);
+      if (markdownImage) {
+        return {
+          type: 'image',
+          alt: markdownImage[1] || 'Release preview',
+          src: markdownImage[2],
+        };
+      }
+
+      const htmlImage = line.match(/<img[^>]*>/i);
+      if (htmlImage) {
+        const src = getAttributeValue(htmlImage[0], 'src');
+        if (src) {
+          return {
+            type: 'image',
+            alt: getAttributeValue(htmlImage[0], 'alt') || 'Release preview',
+            src,
+          };
+        }
+      }
+
+      const text = line
+        .replace(/<[^>]+>/g, '')
+        .replace(/\[(.*?)\]\((.*?)\)/g, '$1: $2')
+        .replace(/\*\*/g, '')
+        .replace(/`/g, '')
+        .replace(/^#{1,6}\s*/, '')
+        .replace(/^[-*]\s*/, '')
+        .trim();
+
+      return text ? { type: 'text', text } : null;
+    })
+    .filter(Boolean);
+
+  return items.length ? items.slice(0, 14) as ReleaseNoteItem[] : [{ type: 'text', text: 'No release notes were published for this version.' }];
+};
+
 export const DownloadRedirect: React.FC = () => {
-  const [status, setStatus] = useState('Đang kiểm tra phiên bản mới nhất...');
+  const [status, setStatus] = useState('Checking GitHub releases...');
   const [error, setError] = useState<string | null>(null);
-  const [release, setRelease] = useState<ReleaseState>({
-    downloadUrl: null,
-    versionName: null,
-    fileSize: null,
-    releaseDate: null,
-  });
+  const [releases, setReleases] = useState<AppRelease[]>([]);
+  const [selectedReleaseId, setSelectedReleaseId] = useState<number | null>(null);
 
   useEffect(() => {
     const previousBodyOverflow = document.body.style.overflow;
@@ -41,102 +185,135 @@ export const DownloadRedirect: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const fetchLatestRelease = async () => {
+    const fetchReleases = async () => {
       try {
-        const response = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`);
+        const allReleaseData: any[] = [];
 
-        if (!response.ok) {
-          throw new Error('Không thể lấy thông tin bản phát hành.');
+        for (let page = 1; page <= 10; page += 1) {
+          const response = await fetch(`https://api.github.com/repos/${REPO}/releases?per_page=100&page=${page}`);
+
+          if (!response.ok) {
+            throw new Error('Unable to read release information.');
+          }
+
+          const data = await response.json();
+          if (!Array.isArray(data) || data.length === 0) break;
+
+          allReleaseData.push(...data);
+          if (data.length < 100) break;
         }
 
-        const data = await response.json();
-        const assets = data.assets || [];
-        const exeAsset = assets.find((asset: any) => String(asset.name || '').endsWith('.exe'));
+        const releaseList: AppRelease[] = allReleaseData.map((item: any) => {
+            const assets = item.assets || [];
+            const exeAsset = assets.find((asset: any) => String(asset.name || '').endsWith('.exe'));
 
-        if (!exeAsset) {
-          setError('Không tìm thấy file cài đặt Windows (.exe).');
+            return {
+              id: item.id,
+              tagName: item.tag_name || item.name || 'Release',
+              name: item.name || item.tag_name || 'Release',
+              notes: item.body || '',
+              downloadUrl: exeAsset?.browser_download_url || null,
+              fileSize: exeAsset?.size ? `${(exeAsset.size / (1024 * 1024)).toFixed(1)} MB` : null,
+              releaseDate: formatReleaseDate(item.published_at),
+              isPrerelease: !!item.prerelease,
+            };
+          });
+
+        if (!releaseList.length) {
+          setError('No GitHub releases are published yet.');
           return;
         }
 
-        setRelease({
-          downloadUrl: exeAsset.browser_download_url,
-          versionName: data.tag_name || data.name || 'Latest',
-          fileSize: exeAsset.size ? `${(exeAsset.size / (1024 * 1024)).toFixed(1)} MB` : null,
-          releaseDate: data.published_at
-            ? new Date(data.published_at).toLocaleDateString('vi-VN', {
-                day: '2-digit',
-                month: '2-digit',
-                year: 'numeric',
-              })
-            : null,
-        });
-        setStatus('Sẵn sàng tải về');
+        setReleases(releaseList);
+        setSelectedReleaseId(getReleaseIdFromHash(releaseList) || releaseList[0].id);
+        setStatus('Ready to download');
       } catch (err) {
         console.error(err);
-        setError('Không thể kết nối đến GitHub. Vui lòng mở trang Releases để tải thủ công.');
+        setError('Could not connect to GitHub. Open Releases to download the installer manually.');
       }
     };
 
-    fetchLatestRelease();
+    fetchReleases();
   }, []);
 
-  const details = [
-    { label: 'Nền tảng', value: 'Windows 10/11' },
-    { label: 'Kiến trúc', value: '64-bit' },
-    { label: 'Giấy phép', value: 'MIT' },
-  ];
+  const selectedRelease = useMemo(
+    () => releases.find((release) => release.id === selectedReleaseId) || releases[0] || null,
+    [releases, selectedReleaseId]
+  );
+
+  useEffect(() => {
+    if (!releases.length) return;
+
+    const selectReleaseFromHash = () => {
+      const releaseId = getReleaseIdFromHash(releases);
+      if (releaseId) {
+        setSelectedReleaseId(releaseId);
+      }
+    };
+
+    selectReleaseFromHash();
+    window.addEventListener('hashchange', selectReleaseFromHash);
+
+    return () => window.removeEventListener('hashchange', selectReleaseFromHash);
+  }, [releases]);
+
+  useEffect(() => {
+    if (!selectedRelease || !window.location.hash.startsWith('#release-')) return;
+
+    window.requestAnimationFrame(() => {
+      document.getElementById('release-notes')?.scrollIntoView({ block: 'start' });
+    });
+  }, [selectedRelease]);
 
   const releaseDetails = [
-    { label: 'Phiên bản', value: release.versionName },
-    { label: 'Dung lượng', value: release.fileSize },
-    { label: 'Phát hành', value: release.releaseDate },
+    { label: 'Version', value: selectedRelease?.tagName },
+    { label: 'Installer', value: selectedRelease?.fileSize || 'GitHub asset' },
+    { label: 'Published', value: selectedRelease?.releaseDate },
   ].filter((item) => item.value);
+
+  const requirements = [
+    { label: 'Platform', value: 'Windows 10 or later' },
+    { label: 'Architecture', value: '64-bit' },
+    { label: 'License', value: 'MIT' },
+  ];
 
   const features = [
     {
-      title: 'Thư viện nhạc local',
-      description: 'Import file hoặc folder nhạc trên máy và phát trực tiếp trong app.',
-      icon: (
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
-      ),
+      title: 'Built for local music',
+      description: 'Import files and folders, keep your library on your machine, and play without accounts or ads.',
+      icon: <FolderIcon />,
     },
     {
-      title: 'Lyrics đồng bộ',
-      description: 'Tự tìm lời bài hát và hiển thị theo thời gian phát nhạc.',
-      icon: (
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l10-2v12M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm10-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z" />
-      ),
+      title: 'Album-first playback',
+      description: 'Browse your collection by songs, albums, and artists with artwork pulled from your own files.',
+      icon: <DiscIcon />,
     },
     {
-      title: 'Discord Rich Presence',
-      description: 'Hiển thị bài đang nghe và trạng thái phát nhạc trên Discord.',
-      icon: (
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M7 8h10a4 4 0 014 4v4a3 3 0 01-3 3h-1l-2-2H9l-2 2H6a3 3 0 01-3-3v-4a4 4 0 014-4z" />
-      ),
+      title: 'Synced lyrics',
+      description: 'Search and display timed lyrics while you listen, including a focused full-screen player.',
+      icon: <LyricsIcon />,
     },
   ];
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-[#05090d] text-white font-sans">
-      <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(14,165,233,0.18)_0%,rgba(5,9,13,0)_42%)]" />
-        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.035)_1px,transparent_1px)] bg-[size:64px_64px] opacity-30" />
-      </div>
+    <div className="min-h-screen overflow-x-hidden bg-[#03070b] text-[#e8f7ff]">
+      <div className="fixed inset-0 pointer-events-none bg-[radial-gradient(circle_at_28%_12%,rgba(14,165,233,0.34),transparent_34%),linear-gradient(180deg,rgba(3,105,161,0.18)_0%,rgba(3,7,11,0)_48%)]" />
+      <div className="fixed inset-0 pointer-events-none opacity-[0.12] [background-image:linear-gradient(#7dd3fc_1px,transparent_1px),linear-gradient(90deg,#7dd3fc_1px,transparent_1px)] [background-size:34px_34px]" />
 
-      <header className="relative z-10 border-b border-white/10 bg-[#05090d]/80 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4 md:px-8">
-          <a href="/" className="flex items-center gap-3">
-            <img src={appLogo} alt="LuminaPlayer" className="h-11 w-11 rounded-xl" />
+      <header className="relative z-10 border-b border-sky-300/15 bg-[#050b12]/86 backdrop-blur">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4 md:px-8">
+          <a href="/download" className="flex items-center gap-3">
+            <img src={appLogo} alt="LuminaPlayer logo" className="h-12 w-12 rounded-[10px] shadow-[0_0_24px_rgba(14,165,233,0.38)]" />
             <div>
-              <div className="text-base font-bold tracking-tight">LuminaPlayer</div>
-              <div className="text-xs font-medium uppercase tracking-[0.18em] text-sky-300/70">Local Music Player</div>
+              <div className="text-base font-black tracking-tight text-white">LuminaPlayer</div>
+              <div className="text-xs font-bold uppercase tracking-[0.18em] text-sky-300">Desktop music player</div>
             </div>
           </a>
 
-          <nav className="hidden items-center gap-7 text-sm text-white/60 md:flex">
-            <a href="#features" className="transition hover:text-white">Tính năng</a>
-            <a href="#requirements" className="transition hover:text-white">Yêu cầu</a>
-            <a href={`https://github.com/${REPO}`} target="_blank" rel="noopener noreferrer" className="transition hover:text-white">
+          <nav className="hidden items-center gap-7 text-sm font-semibold text-sky-100/62 md:flex">
+            <a href="#download" className="transition hover:text-sky-200">Download</a>
+            <a href="#release-notes" className="transition hover:text-sky-200">Release notes</a>
+            <a href={`https://github.com/${REPO}`} target="_blank" rel="noopener noreferrer" className="transition hover:text-sky-200">
               GitHub
             </a>
           </nav>
@@ -144,145 +321,225 @@ export const DownloadRedirect: React.FC = () => {
       </header>
 
       <main className="relative z-10">
-        <section className="mx-auto grid max-w-7xl items-center gap-12 px-5 py-14 md:px-8 md:py-20 lg:grid-cols-[0.95fr_1.05fr]">
+        <section className="mx-auto grid max-w-6xl gap-10 px-5 pb-12 pt-10 md:px-8 md:pb-16 md:pt-14 lg:grid-cols-[0.88fr_1.12fr] lg:items-center">
           <div>
-            <div className="mb-6 inline-flex items-center gap-3 rounded-full border border-sky-300/20 bg-sky-400/10 px-4 py-2 text-sm font-medium text-sky-100">
-              <img src={appLogo} alt="" className="h-6 w-6 rounded-md" />
-              App nghe nhạc local cho Windows
+            <div className="mb-6 inline-flex items-center gap-2 border-y border-sky-300/35 py-2 text-xs font-black uppercase tracking-[0.22em] text-sky-200">
+              Official Windows installer
             </div>
 
-            <h1 className="max-w-3xl text-4xl font-black tracking-tight text-white md:text-6xl">
-              Tải LuminaPlayer cho thư viện nhạc trên máy của bạn.
+            <h1 className="max-w-2xl font-serif text-5xl font-black leading-[0.95] tracking-normal text-white md:text-7xl">
+              Download LuminaPlayer
             </h1>
 
-            <p className="mt-6 max-w-2xl text-base leading-8 text-white/65 md:text-lg">
-              Một trình phát nhạc desktop gọn, đẹp, tập trung vào nhạc local, lyrics đồng bộ,
-              metadata thông minh và trải nghiệm nghe nhạc không quảng cáo.
+            <p className="mt-6 max-w-xl text-lg leading-8 text-sky-50/70">
+              A focused desktop player for people who still keep music files. Import your local library, see album art,
+              follow synced lyrics, and listen without a subscription getting in the way.
             </p>
 
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              {release.downloadUrl ? (
-                <a
-                  id="download"
-                  href={release.downloadUrl}
-                  className="inline-flex items-center justify-center gap-3 rounded-xl bg-sky-300 px-6 py-4 text-base font-bold text-slate-950 shadow-[0_20px_60px_rgba(14,165,233,0.28)] transition hover:-translate-y-0.5 hover:bg-sky-200"
-                >
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v12m0 0l-4-4m4 4l4-4M4 20h16" />
-                  </svg>
-                  Tải về cho Windows
-                </a>
-              ) : error ? (
-                <a
-                  id="download"
-                  href={`https://github.com/${REPO}/releases/latest`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center justify-center rounded-xl border border-white/15 bg-white/8 px-6 py-4 text-base font-bold text-white transition hover:bg-white/12"
-                >
-                  Mở GitHub Releases
-                </a>
-              ) : (
-                <div
-                  id="download"
-                  className="inline-flex items-center justify-center gap-3 rounded-xl border border-white/10 bg-white/8 px-6 py-4 text-base font-bold text-white/70"
-                >
-                  <span className="h-5 w-5 animate-spin rounded-full border-2 border-white/20 border-t-sky-200" />
-                  {status}
+            <div id="download" className="mt-8 max-w-xl border border-sky-300/22 bg-[#07111c]/92 p-4 shadow-[6px_6px_0_#0ea5e9]">
+              <div className="flex items-start gap-4">
+                <img src={appLogo} alt="" className="h-16 w-16 rounded-[12px] shadow-[0_0_22px_rgba(56,189,248,0.26)]" />
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-black uppercase tracking-[0.16em] text-sky-200">Lumina Music Player</div>
+                  <div className="mt-1 text-sm leading-6 text-sky-50/60">
+                    {selectedRelease ? `${selectedRelease.tagName} setup package, delivered from GitHub Releases.` : 'Windows setup package, delivered from GitHub Releases.'}
+                  </div>
                 </div>
-              )}
+              </div>
 
-              <a
-                href={`https://github.com/${REPO}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center justify-center rounded-xl border border-white/12 px-6 py-4 text-base font-semibold text-white/80 transition hover:bg-white/8 hover:text-white"
-              >
-                Xem mã nguồn
-              </a>
-            </div>
+              <div className="mt-5">
+                {selectedRelease?.downloadUrl ? (
+                  <a
+                    href={selectedRelease.downloadUrl}
+                    className="inline-flex w-full items-center justify-center gap-3 bg-sky-400 px-5 py-4 text-base font-black text-[#03101a] shadow-[inset_0_-3px_0_rgba(0,0,0,0.18)] transition hover:bg-sky-300 sm:w-auto"
+                  >
+                    <DownloadIcon />
+                    Download for Windows
+                  </a>
+                ) : error ? (
+                  <a
+                    href={`https://github.com/${REPO}/releases/latest`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex w-full items-center justify-center bg-sky-950 px-5 py-4 text-base font-black text-sky-50 transition hover:bg-sky-900 sm:w-auto"
+                  >
+                    Open GitHub Releases
+                  </a>
+                ) : (
+                  <div className="inline-flex w-full items-center justify-center gap-3 border border-sky-300/20 bg-sky-950/70 px-5 py-4 text-base font-black text-sky-100/72 sm:w-auto">
+                    <span className="h-5 w-5 animate-spin rounded-full border-2 border-sky-200/20 border-t-sky-200" />
+                    {status}
+                  </div>
+                )}
+              </div>
 
-            {error && <p className="mt-4 text-sm text-red-300/85">{error}</p>}
+              {error && <p className="mt-4 text-sm font-semibold text-red-300">{error}</p>}
 
-            <div className="mt-8 grid max-w-xl grid-cols-3 gap-3">
-              {releaseDetails.length > 0
-                ? releaseDetails.map((item) => (
-                    <div key={item.label} className="rounded-xl border border-white/10 bg-white/[0.04] p-4">
-                      <div className="text-xs uppercase tracking-[0.16em] text-white/35">{item.label}</div>
-                      <div className="mt-2 text-sm font-bold text-white/90">{item.value}</div>
-                    </div>
-                  ))
-                : details.map((item) => (
-                    <div key={item.label} className="rounded-xl border border-white/10 bg-white/[0.04] p-4">
-                      <div className="text-xs uppercase tracking-[0.16em] text-white/35">{item.label}</div>
-                      <div className="mt-2 text-sm font-bold text-white/90">{item.value}</div>
-                    </div>
-                  ))}
+              <dl className="mt-5 grid gap-3 border-t border-sky-300/15 pt-4 sm:grid-cols-3">
+                {(releaseDetails.length > 0 ? releaseDetails : requirements).map((item) => (
+                  <div key={item.label}>
+                    <dt className="text-[11px] font-black uppercase tracking-[0.18em] text-sky-200/45">{item.label}</dt>
+                    <dd className="mt-1 text-sm font-black text-sky-50">{item.value}</dd>
+                  </div>
+                ))}
+              </dl>
             </div>
           </div>
 
-          <div className="relative">
-            <div className="mb-5 flex items-center gap-4 rounded-2xl border border-white/10 bg-white/[0.05] p-4">
-              <img src={appLogo} alt="LuminaPlayer logo" className="h-16 w-16 rounded-2xl shadow-lg shadow-sky-950/40" />
-              <div>
-                <div className="text-xl font-bold">LuminaPlayer</div>
-                <div className="mt-1 text-sm text-white/55">Local music library, lyrics, and desktop playback.</div>
+          <div className="lg:pl-6">
+            <div className="border border-sky-300/18 bg-[#02060a] p-3 shadow-[10px_10px_0_#075985]">
+              <div className="mb-3 flex items-center justify-between border-b border-sky-200/12 px-2 pb-3">
+                <div className="flex items-center gap-3">
+                  <img src={appLogo} alt="LuminaPlayer" className="h-9 w-9 rounded-[8px]" />
+                  <div>
+                    <div className="text-sm font-black text-white">LuminaPlayer</div>
+                    <div className="text-xs text-sky-200/58">Local library preview</div>
+                  </div>
+                </div>
+                <div className="hidden text-xs font-bold uppercase tracking-[0.16em] text-sky-200/58 sm:block">No sign-in required</div>
               </div>
-            </div>
-
-            <div className="overflow-hidden rounded-2xl border border-white/12 bg-white/[0.04] shadow-2xl shadow-sky-950/30">
-              <img src={banner} alt="LuminaPlayer app preview" className="block w-full" />
+              <img src={banner} alt="LuminaPlayer app preview" className="block w-full border border-sky-200/10" />
             </div>
           </div>
         </section>
 
-        <section id="features" className="mx-auto max-w-7xl px-5 pb-8 md:px-8">
-          <div className="grid gap-4 md:grid-cols-3">
-            {features.map((feature) => (
-              <article key={feature.title} className="rounded-2xl border border-white/10 bg-white/[0.045] p-6">
-                <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-xl bg-sky-300/12 text-sky-200">
-                  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    {feature.icon}
-                  </svg>
+        <section id="release-notes" className="mx-auto max-w-6xl px-5 pb-12 md:px-8">
+          <div className="border border-sky-300/18 bg-[#06101a]/92">
+            <div className="border-b border-sky-300/15 p-5 md:p-6">
+              <div className="text-xs font-black uppercase tracking-[0.2em] text-sky-300">GitHub release notes</div>
+              <h2 className="mt-2 font-serif text-3xl font-black tracking-normal text-white">Version history</h2>
+            </div>
+
+            {releases.length > 0 ? (
+              <div className="grid md:grid-cols-[240px_1fr]">
+                <div className="flex gap-2 overflow-x-auto border-b border-sky-300/15 p-3 md:sticky md:top-4 md:block md:max-h-[calc(100vh-2rem)] md:overflow-y-auto md:border-b-0 md:border-r md:p-4">
+                  {releases.map((release) => {
+                    const isSelected = release.id === selectedRelease?.id;
+
+                    return (
+                      <button
+                        key={release.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedReleaseId(release.id);
+                          window.history.pushState(null, '', getReleaseHash(release));
+                          window.requestAnimationFrame(() => {
+                            document.getElementById('release-notes')?.scrollIntoView({ block: 'start' });
+                          });
+                        }}
+                        className={`block min-w-[150px] border px-4 py-3 text-left transition md:mb-2 md:w-full ${
+                          isSelected
+                            ? 'border-sky-300 bg-sky-300 text-[#03101a]'
+                            : 'border-sky-300/15 bg-[#02070d] text-sky-100/70 hover:border-sky-300/45 hover:text-sky-50'
+                        }`}
+                      >
+                        <span className="block text-sm font-black">{release.tagName}</span>
+                        <span className={`mt-1 block text-xs font-semibold ${isSelected ? 'text-[#03101a]/72' : 'text-sky-200/46'}`}>
+                          {release.releaseDate || 'Unpublished'}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
-                <h2 className="text-lg font-bold">{feature.title}</h2>
-                <p className="mt-3 text-sm leading-6 text-white/55">{feature.description}</p>
+
+                {selectedRelease && (
+                  <article key={selectedRelease.id} id={getReleaseDomId(selectedRelease)} className="p-5 md:p-6">
+                      <div className="flex flex-col gap-3 border-b border-sky-300/12 pb-5 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <h3 className="text-2xl font-black text-white">{selectedRelease.name}</h3>
+                          <div className="mt-2 flex flex-wrap gap-2 text-xs font-bold uppercase tracking-[0.14em]">
+                            <span className="border border-sky-300/18 bg-sky-950/55 px-3 py-1 text-sky-200">{selectedRelease.tagName}</span>
+                            {selectedRelease.isPrerelease && <span className="border border-amber-200/25 bg-amber-300/10 px-3 py-1 text-amber-200">Pre-release</span>}
+                            {selectedRelease.fileSize && <span className="border border-sky-300/18 bg-sky-950/55 px-3 py-1 text-sky-200">{selectedRelease.fileSize}</span>}
+                            {selectedRelease.releaseDate && <span className="border border-sky-300/18 bg-sky-950/55 px-3 py-1 text-sky-200">{selectedRelease.releaseDate}</span>}
+                          </div>
+                        </div>
+
+                        {selectedRelease.downloadUrl && (
+                          <a
+                            href={selectedRelease.downloadUrl}
+                            className="inline-flex items-center justify-center gap-2 border border-sky-300/30 px-4 py-3 text-sm font-black text-sky-100 transition hover:bg-sky-300 hover:text-[#03101a]"
+                          >
+                            <DownloadIcon />
+                            Download this version
+                          </a>
+                        )}
+                      </div>
+
+                      <div className="mt-5 space-y-4 text-sm leading-7 text-sky-50/72">
+                        {formatReleaseNotes(selectedRelease.notes).map((item, index) =>
+                          item.type === 'image' ? (
+                            <a
+                              key={`${selectedRelease.id}-${index}`}
+                              href={item.src}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="block overflow-hidden border border-sky-300/18 bg-[#02070d] p-2 transition hover:border-sky-300/45"
+                            >
+                              <ReleaseImage src={item.src} alt={item.alt} />
+                              <span className="mt-2 block text-xs font-black uppercase tracking-[0.16em] text-sky-300">
+                                Open image
+                              </span>
+                            </a>
+                          ) : (
+                            <div key={`${selectedRelease.id}-${index}`} className="border-l-2 border-sky-300/36 pl-4">
+                              {item.text}
+                            </div>
+                          )
+                        )}
+                      </div>
+                    </article>
+                )}
+              </div>
+            ) : (
+              <div className="p-6 text-sm font-semibold text-sky-100/62">{status}</div>
+            )}
+          </div>
+        </section>
+
+        <section id="features" className="border-y border-sky-300/15 bg-[#07111c]/72">
+          <div className="mx-auto grid max-w-6xl gap-px px-5 py-10 md:grid-cols-3 md:px-8">
+            {features.map((feature) => (
+              <article key={feature.title} className="bg-[#08131f] p-6">
+                <div className="mb-5 flex h-11 w-11 items-center justify-center bg-sky-300 text-[#03101a]">
+                  {feature.icon}
+                </div>
+                <h2 className="text-lg font-black text-white">{feature.title}</h2>
+                <p className="mt-3 text-sm leading-6 text-sky-50/58">{feature.description}</p>
               </article>
             ))}
           </div>
         </section>
 
-        <section id="requirements" className="mx-auto max-w-7xl px-5 py-12 md:px-8">
-          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-6 md:p-8">
-            <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
-              <div>
-                <h2 className="text-2xl font-bold">Sẵn sàng cho Windows desktop</h2>
-                <p className="mt-2 text-sm leading-6 text-white/55">
-                  Tải bản cài đặt mới nhất từ GitHub Releases. Nếu trình duyệt cảnh báo file tải về,
-                  bạn có thể kiểm tra mã nguồn trực tiếp trên GitHub.
-                </p>
-              </div>
-              <div className="grid grid-cols-3 gap-3 text-center">
-                {details.map((item) => (
-                  <div key={item.label} className="rounded-xl bg-black/20 px-4 py-3">
-                    <div className="text-xs text-white/35">{item.label}</div>
-                    <div className="mt-1 text-sm font-semibold">{item.value}</div>
-                  </div>
-                ))}
-              </div>
+        <section className="mx-auto max-w-6xl px-5 py-12 md:px-8">
+          <div className="grid gap-8 border-t border-sky-300/15 pt-8 md:grid-cols-[0.9fr_1.1fr]">
+            <div>
+              <h2 className="font-serif text-3xl font-black tracking-normal text-white">Before you install</h2>
+              <p className="mt-3 max-w-lg text-sm leading-7 text-sky-50/62">
+                The installer is published with each release. If Windows SmartScreen asks for confirmation, you can
+                review the source code and release assets on GitHub before continuing.
+              </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              {requirements.map((item) => (
+                <div key={item.label} className="border border-sky-300/18 bg-[#07111c] p-4">
+                  <div className="text-[11px] font-black uppercase tracking-[0.18em] text-sky-200/45">{item.label}</div>
+                  <div className="mt-2 text-sm font-black text-sky-50">{item.value}</div>
+                </div>
+              ))}
             </div>
           </div>
         </section>
 
-        <footer className="mx-auto max-w-7xl px-5 pb-10 pt-4 text-sm text-white/35 md:px-8">
-          <div className="flex flex-col gap-3 border-t border-white/10 pt-6 md:flex-row md:items-center md:justify-between">
-            <span>LuminaPlayer</span>
+        <footer className="mx-auto max-w-6xl px-5 pb-10 text-sm font-semibold text-sky-100/42 md:px-8">
+          <div className="flex flex-col gap-3 border-t border-sky-300/15 pt-6 md:flex-row md:items-center md:justify-between">
+            <span>LuminaPlayer for Windows</span>
             <div className="flex gap-5">
-              <a href={`https://github.com/${REPO}`} target="_blank" rel="noopener noreferrer" className="hover:text-white">
-                GitHub
+              <a href={`https://github.com/${REPO}`} target="_blank" rel="noopener noreferrer" className="hover:text-sky-200">
+                Source code
               </a>
-              <a href={`https://github.com/${REPO}/releases`} target="_blank" rel="noopener noreferrer" className="hover:text-white">
-                Releases
+              <a href={`https://github.com/${REPO}/releases`} target="_blank" rel="noopener noreferrer" className="hover:text-sky-200">
+                All releases
               </a>
             </div>
           </div>

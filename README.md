@@ -114,7 +114,7 @@ native/
 Build the Windows desktop application:
 
 ```bash
-npm run electron:build:win
+  npm run electron:build:win
 ```
 
 The installer will be generated in the `release/` folder.

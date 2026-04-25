@@ -486,6 +486,59 @@ function youtubeMusicLyricsDevProxy() {
   };
 }
 
+function releaseImageDevProxy() {
+  return {
+    name: 'release-image-dev-proxy',
+    configureServer(server: any) {
+      server.middlewares.use('/api/release-image', async (req: any, res: any) => {
+        try {
+          const requestUrl = new URL(req.url || '', 'http://localhost');
+          const imageUrl = requestUrl.searchParams.get('url') || '';
+          const parsedUrl = new URL(imageUrl);
+          const isGitHubAttachment =
+            parsedUrl.hostname === 'github.com' &&
+            parsedUrl.pathname.startsWith('/user-attachments/assets/');
+
+          if (!isGitHubAttachment) {
+            res.statusCode = 400;
+            res.end('Unsupported release image URL');
+            return;
+          }
+
+          const response = await fetch(parsedUrl.toString(), {
+            headers: {
+              'User-Agent': YOUTUBE_MUSIC_HEADERS['User-Agent'],
+              Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+            },
+          });
+
+          if (!response.ok) {
+            res.statusCode = response.status;
+            res.end('Release image not found');
+            return;
+          }
+
+          const contentType = response.headers.get('content-type') || 'image/png';
+          if (!contentType.startsWith('image/')) {
+            res.statusCode = 415;
+            res.end('Release asset is not an image');
+            return;
+          }
+
+          const imageBuffer = Buffer.from(await response.arrayBuffer());
+          res.statusCode = 200;
+          res.setHeader('Content-Type', contentType);
+          res.setHeader('Cache-Control', 'public, max-age=3600');
+          res.end(imageBuffer);
+        } catch (error: any) {
+          res.statusCode = 500;
+          res.end(error?.message || 'Release image proxy failed');
+        }
+      });
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
     return {
@@ -494,7 +547,7 @@ export default defineConfig(({ mode }) => {
         port: 5173,
         host: '0.0.0.0',
       },
-      plugins: [react(), youtubeMusicLyricsDevProxy()],
+      plugins: [react(), youtubeMusicLyricsDevProxy(), releaseImageDevProxy()],
       define: {
         'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
         'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
